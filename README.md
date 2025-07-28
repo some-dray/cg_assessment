@@ -48,6 +48,9 @@ python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -e sample_exec_s
 # With custom appendix
 python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -e sample_exec_summary.md -a custom_appendix.md
 
+# With customer name for branding
+python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -c "Acme Corporation"
+
 # Whitespace-separated format
 python3 cve_scanner.py -s sample_image_pairs.txt -o report.html
 ```
@@ -83,6 +86,9 @@ python3 cve_scanner.py -s sample_images.txt -o report.html
 
 # Include executive summary
 python3 cve_scanner.py -s nginx:latest -o report.html -e sample_exec_summary.md
+
+# With customer name
+python3 cve_scanner.py -s nginx:latest -o report.html -c "YourCompany"
 ```
 
 ### Command Line Options
@@ -96,6 +102,7 @@ python3 cve_scanner.py -s nginx:latest -o report.html -e sample_exec_summary.md
 - `-o, --output`: Output HTML file path (required)
 - `-e, --exec-summary`: Optional markdown file for executive summary
 - `-a, --appendix`: Optional markdown file for custom appendix content (appears above methodology)
+- `-c, --customer-name`: Customer name for report footer (default: "Customer")
 - `--max-workers`: Number of parallel scanning threads (default: 4)
 - `--timeout-per-image`: Timeout in seconds per image scan (default: 300)
 

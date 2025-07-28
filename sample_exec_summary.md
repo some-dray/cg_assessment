@@ -1,6 +1,6 @@
-### Security Vulnerability Assessment for Domain
+### Security Vulnerability Assessment for CustomerX
 
-This comprehensive vulnerability assessment demonstrates the challenges that <customer> face in managing CVE's at scale. <customer>  are not alone in this challenge, however this report shows the significant security advantages of migrating from standard container images to **Chainguard's hardened alternatives**. Analysis of {{images_scanned}} container image pairs reveals a **{{reduction_percentage}} overall CVE reduction**, eliminating {{total_reduction}} vulnerabilities across your infrastructure.
+This comprehensive vulnerability assessment demonstrates the challenges that CustomerX face in managing CVE's at scale. CustomerX  are not alone in this challenge, however this report shows the significant security advantages of migrating from standard container images to **Chainguard's hardened alternatives**. Analysis of {{images_scanned}} container image pairs reveals a **{{reduction_percentage}} overall CVE reduction**, eliminating {{total_reduction}} vulnerabilities across your infrastructure.
 
 ### Key Findings
 

@@ -470,7 +470,8 @@ class CVEScanner:
     
     def generate_html_report(self, scan_results: List[ScanResult], 
                            exec_file: Optional[str], output_file: str, 
-                           appendix_file: Optional[str] = None):
+                           appendix_file: Optional[str] = None, 
+                           customer_name: Optional[str] = None):
         """Generate the HTML report"""
         logger.info("Generating HTML report...")
         
@@ -592,7 +593,14 @@ class CVEScanner:
                     </tbody>
                 </table>
             </div>
-            <p><small>* Images marked with an asterisk were retried with the :latest tag after initial scan failure.</small></p>
+            <div class="table-legend">
+                <div class="legend-section">
+                    <p class="legend-note">
+                        <span class="legend-icon">*</span>
+                        Images marked with an asterisk were retried with the :latest tag after initial scan failure.
+                    </p>
+                </div>
+            </div>
         </div>
 
         {self._generate_failed_scans_section()}
@@ -601,14 +609,18 @@ class CVEScanner:
         <div class="appendix-content">
             <h2>Appendix</h2>
             {appendix_content}
+            
+            <!-- Footer integrated within appendix container -->
+            <div class="footer">
+                <p>This report is {customer_name or "Customer"} & Chainguard Confidential | Generated on {self._get_current_datetime()}</p>
+            </div>
         </div>
-    </div>
-
-    <div class="footer">
-        <p>Powered by Chainguard | Generated on {self._get_current_datetime()}</p>
     </div>
 </body>
 </html>"""
+        
+        # Clean up chainguard-private references in the HTML content
+        html_content = html_content.replace("chainguard-private", "chainguard")
         
         # Write HTML file
         with open(output_file, 'w') as f:
@@ -650,18 +662,22 @@ class CVEScanner:
             customer_display_name = self._get_display_name(customer)
             chainguard_display_name = self._get_display_name(chainguard) if chainguard else "No corresponding image found"
             
-            chainguard_vulns = chainguard.total_vulnerabilities if chainguard else "-"
+            # Format vulnerability breakdowns
+            customer_breakdown = self._format_vulnerability_breakdown(customer)
+            chainguard_breakdown = self._format_vulnerability_breakdown(chainguard) if chainguard else "-"
             chainguard_class = "" if chainguard else ' class="no-match"'
             
             rows.append(f"""
-                <tr>
-                    <td><code>{customer_display_name}</code></td>
-                    <td>{customer.total_vulnerabilities}</td>
-                    <td{chainguard_class}>
-                        {'<code>' + chainguard_display_name + '</code>' if chainguard else '<span class="no-match">' + chainguard_display_name + '</span>'}
+                <tr class="image-comparison-row">
+                    <td class="image-name-cell">
+                        <code class="image-name">{customer_display_name}</code>
                     </td>
-                    <td{chainguard_class}>
-                        {'<span class="no-match">' + str(chainguard_vulns) + '</span>' if not chainguard else str(chainguard_vulns)}
+                    <td class="vulnerability-count">{customer_breakdown}</td>
+                    <td class="image-name-cell{chainguard_class}">
+                        {'<code class="image-name">' + chainguard_display_name + '</code>' if chainguard else '<span class="no-match">' + chainguard_display_name + '</span>'}
+                    </td>
+                    <td class="vulnerability-count{chainguard_class}">
+                        {'<span class="no-match">' + str(chainguard_breakdown) + '</span>' if not chainguard else str(chainguard_breakdown)}
                     </td>
                 </tr>
             """)
@@ -672,6 +688,13 @@ class CVEScanner:
         if vuln_data.was_retried:
             return f"{vuln_data.original_image_name}*"
         return vuln_data.image_name
+    
+    def _format_vulnerability_breakdown(self, vuln_data: VulnerabilityData) -> str:
+        """Format vulnerability count as simple total number"""
+        if not vuln_data.scan_successful:
+            return "-"
+        
+        return str(vuln_data.total_vulnerabilities)
     
     def calculate_cve_reduction_metrics(self, scan_results: List[ScanResult]) -> Dict:
         """Calculate CVE reduction metrics from scan results"""
@@ -731,41 +754,49 @@ class CVEScanner:
     def load_appendix(self, appendix_file: Optional[str], metrics: Dict = None) -> str:
         """Load and convert markdown appendix to HTML with data interpolation"""
         
-        # Default appendix content with provenance added
+        # Default appendix content with strategic continuation headers for page breaks
         default_content = """
-                <h3>Methodology</h3>
-                <p>This report was generated using the following methodology:</p>
-                <ul>
-                    <li><strong>Scanning Tool:</strong> Grype vulnerability scanner</li>
-                    <li><strong>Data Sources:</strong> National Vulnerability Database (NVD) and other security databases</li>
-                    <li><strong>Image Analysis:</strong> Container images were scanned for known vulnerabilities</li>
-                    <li><strong>Comparison:</strong> Customer images compared against Chainguard hardened alternatives</li>
-                </ul>
+                <div class="appendix-section">
+                    <h3>Methodology</h3>
+                    <p>This report was generated using the following methodology:</p>
+                    <ul>
+                        <li><strong>Scanning Tool:</strong> Grype vulnerability scanner</li>
+                        <li><strong>Data Sources:</strong> National Vulnerability Database (NVD) and other security databases</li>
+                        <li><strong>Image Analysis:</strong> Container images were scanned for known vulnerabilities</li>
+                        <li><strong>Comparison:</strong> Customer images compared against Chainguard hardened alternatives</li>
+                    </ul>
+                </div>
                 
-                <h3>Severity Levels</h3>
-                <p>Vulnerabilities are classified using the following severity levels:</p>
-                <ul>
-                    <li><strong>Critical:</strong> Vulnerabilities with CVSS scores of 9.0-10.0</li>
-                    <li><strong>High:</strong> Vulnerabilities with CVSS scores of 7.0-8.9</li>
-                    <li><strong>Medium:</strong> Vulnerabilities with CVSS scores of 4.0-6.9</li>
-                    <li><strong>Low:</strong> Vulnerabilities with CVSS scores of 0.1-3.9</li>
-                    <li><strong>Negligible:</strong> Vulnerabilities with minimal impact</li>
-                    <li><strong>Unknown:</strong> Vulnerabilities without assigned severity scores</li>
-                </ul>
+                <!-- Strategic page break marker with continuation header -->
+                <div class="appendix-page-break">
+                    <h2 class="appendix-continuation">Appendix (continued)</h2>
+                </div>
                 
-                <h3>About Chainguard Images</h3>
-                <p>Chainguard Images are container images built with security-first principles:</p>
-                <ul>
-                    <li><strong>Minimal Base:</strong> Built on minimal base images to reduce attack surface</li>
-                    <li><strong>Distroless:</strong> Contains only application dependencies, no package managers</li>
-                    <li><strong>Regular Updates:</strong> Continuously updated with latest security patches</li>
-                    <li><strong>Zero CVEs:</strong> Many images maintain zero known vulnerabilities</li>
-                    <li><strong>SBOM Included:</strong> Software Bill of Materials for transparency</li>
-                    <li><strong>Provenance Tracking:</strong> Complete software supply chain transparency with cryptographic attestations and verifiable build processes</li>
-                </ul>
+                <div class="appendix-section">
+                    <h3>Severity Levels</h3>
+                    <p>Vulnerabilities are classified using the following severity levels:</p>
+                    <ul>
+                        <li><strong>Critical:</strong> Vulnerabilities with CVSS scores of 9.0-10.0</li>
+                        <li><strong>High:</strong> Vulnerabilities with CVSS scores of 7.0-8.9</li>
+                        <li><strong>Medium:</strong> Vulnerabilities with CVSS scores of 4.0-6.9</li>
+                        <li><strong>Low:</strong> Vulnerabilities with CVSS scores of 0.1-3.9</li>
+                        <li><strong>Negligible:</strong> Vulnerabilities with minimal impact</li>
+                        <li><strong>Unknown:</strong> Vulnerabilities without assigned severity scores</li>
+                    </ul>
+                </div>
                 
-                <h3>Report Generation</h3>
-                <p>Report generated using Chainguard CVE Scanner tool on """ + self._get_current_datetime() + """</p>"""
+                <div class="appendix-section">
+                    <h3>About Chainguard Images</h3>
+                    <p>Chainguard Images are container images built with security-first principles:</p>
+                    <ul>
+                        <li><strong>Minimal Base:</strong> Built on minimal base images to reduce attack surface</li>
+                        <li><strong>Distroless:</strong> Contains only application dependencies, no package managers</li>
+                        <li><strong>Regular Updates:</strong> Continuously updated with latest security patches</li>
+                        <li><strong>Zero CVEs:</strong> Many images maintain zero known vulnerabilities</li>
+                        <li><strong>SBOM Included:</strong> Software Bill of Materials for transparency</li>
+                        <li><strong>Provenance Tracking:</strong> Complete software supply chain transparency with cryptographic attestations and verifiable build processes</li>
+                    </ul>
+                </div>"""
         
         if not appendix_file or not os.path.isfile(appendix_file):
             # Return only default content if no custom appendix
@@ -813,20 +844,35 @@ class CVEScanner:
     size: A4;
 }
 
+@page appendix {
+    margin: 0.75in 0.75in 0.75in 0.75in;
+    size: A4;
+    @top-center {
+        content: "Appendix";
+        font-size: 16px;
+        font-weight: 600;
+        color: #14003d;
+        border-bottom: 2px solid #7545fb;
+        padding-bottom: 8px;
+        margin-bottom: 20px;
+    }
+}
+
 @media print {
     body { -webkit-print-color-adjust: exact; color-adjust: exact; }
     .navbar { display: none; }
     .container { padding-top: 0; }
-    .page-break { page-break-before: always; }
     
-    /* Better table page breaking */
+    /* Enhanced table page breaking for new structure */
     .image-table-container {
         page-break-inside: avoid;
         break-inside: avoid;
+        box-shadow: 0 4px 8px rgba(20, 0, 61, 0.15);
     }
     
     .image-table-container table {
         page-break-inside: auto;
+        border: 2px solid var(--cg-primary);
     }
     
     .image-table-container thead {
@@ -834,7 +880,11 @@ class CVEScanner:
         page-break-after: avoid;
     }
     
-    .image-table-container tbody tr {
+    .image-table-container thead th {
+        border-bottom: 3px solid var(--cg-primary);
+    }
+    
+    .image-comparison-row {
         page-break-inside: avoid;
         break-inside: avoid;
         page-break-after: auto;
@@ -844,6 +894,13 @@ class CVEScanner:
         page-break-inside: avoid;
         break-inside: avoid;
     }
+    
+    /* Enhanced badge visibility in PDF */
+    .vuln-badge {
+        border: 2px solid currentColor;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
     
     /* Prevent orphaned text */
     p, li {
@@ -902,9 +959,9 @@ body {
 /* Typography */
 h1 {
     color: var(--cg-white);
-    font-size: 32px;
+    font-size: 28px;
     font-weight: 700;
-    margin: 0 0 16px 0;
+    margin: 0 0 8px 0;
     text-align: center;
     letter-spacing: -0.025em;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -953,7 +1010,7 @@ code {
     text-align: center;
     margin-bottom: 0;
     border-bottom: 4px solid var(--cg-accent);
-    padding: 40px 32px 32px 32px;
+    padding: 20px 32px 20px 32px;
     background: #14003d;
     border-radius: 12px;
     box-shadow: 0 8px 16px -2px rgba(20, 0, 61, 0.15);
@@ -971,9 +1028,9 @@ code {
 }
 
 .header-section p {
-    font-size: 16px;
+    font-size: 14px;
     color: var(--cg-light);
-    margin-top: 12px;
+    margin-top: 8px;
     font-weight: 400;
     opacity: 0.95;
 }
@@ -1121,12 +1178,13 @@ code {
 .image-comparison-section {
     margin-top: 40px;
     margin-bottom: 40px;
-    padding: 32px;
+    padding: 20px;
     border: 2px solid var(--cg-light);
     background: var(--cg-white);
     border-radius: 12px;
     box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
     page-break-inside: avoid;
+    page-break-before: avoid;
 }
 
 .image-comparison-section h2 {
@@ -1137,7 +1195,9 @@ code {
 
 /* Make first section directly adjacent to header */
 .header-section + .image-comparison-section {
-    margin-top: 0;
+    margin-top: 0 !important;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
 }
 
 
@@ -1203,60 +1263,98 @@ code {
     font-weight: 500;
 }
 
-/* Professional table styling */
+/* Enhanced Professional table styling */
 .image-table-container {
     width: 100%;
     overflow: visible;
-    margin-top: 20px;
+    margin: 30px 0;
     page-break-inside: avoid;
     break-inside: avoid;
+    border-radius: 12px;
+    box-shadow: 0 8px 16px -4px rgba(20, 0, 61, 0.12);
+    background: var(--cg-white);
 }
 
 .image-table-container table {
     width: 100%;
-    border-collapse: collapse;
-    border-radius: 8px;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
     table-layout: fixed;
     page-break-inside: auto;
+    border: 2px solid var(--cg-light);
 }
 
 .image-table-container th,
 .image-table-container td {
-    padding: 12px 8px;
-    border: 1px solid var(--cg-light);
+    padding: 16px 12px;
+    border-bottom: 1px solid var(--cg-gray-medium);
     text-align: center;
-    font-size: 11px;
+    font-size: 12px;
     vertical-align: middle;
     word-wrap: break-word;
     overflow-wrap: break-word;
     page-break-inside: avoid;
     break-inside: avoid;
+    line-height: 1.5;
 }
 
 .image-table-container thead th {
     background: var(--cg-primary);
     color: var(--cg-white);
     font-weight: 600;
-    font-size: 13px;
+    font-size: 14px;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
     page-break-after: avoid;
+    border-bottom: 3px solid var(--cg-accent);
 }
 
 .image-table-container tbody tr {
     page-break-inside: avoid;
     break-inside: avoid;
     page-break-after: auto;
+    transition: background-color 0.2s ease;
 }
 
 .image-table-container tbody tr:nth-child(even) {
     background-color: var(--cg-gray-light);
 }
 
-.image-table-container tbody tr {\n    transition: none;\n}\n\n.image-table-container tbody tr:hover {
-    background-color: var(--cg-light);
+.image-table-container tbody tr:nth-child(odd) {
+    background-color: var(--cg-white);
+}
+
+.image-table-container tbody tr:hover {
+    background-color: rgba(116, 69, 251, 0.08);
+}
+
+/* Simplified table cell styling */
+.image-name {
+    font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", "Courier New", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cg-primary);
+    background: rgba(255, 255, 255, 0.8);
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--cg-light);
+}
+
+.image-name-cell {
+    width: 40%;
+}
+
+.breakdown-cell {
+    width: 10%;
+}
+
+.vulnerability-count {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--cg-primary);
+    text-align: center;
 }
 
 .no-match {
@@ -1265,13 +1363,190 @@ code {
     font-weight: 500;
 }
 
-/* Enhanced Appendix */
+/* Enhanced vulnerability breakdown styling */
+.vuln-breakdown-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+    align-items: center;
+    padding: 2px;
+}
+
+.vuln-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 6px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: 1px solid transparent;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.vuln-code {
+    font-weight: 700;
+    opacity: 0.9;
+}
+
+.vuln-count {
+    font-weight: 800;
+    font-size: 11px;
+}
+
+/* Severity-specific badge colors */
+.vuln-critical {
+    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+    color: white;
+    border-color: #b91c1c;
+}
+
+.vuln-high {
+    background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+    color: white;
+    border-color: #dc2626;
+}
+
+.vuln-medium {
+    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+    color: white;
+    border-color: #c2410c;
+}
+
+.vuln-low {
+    background: linear-gradient(135deg, var(--cg-secondary) 0%, #1e40af 100%);
+    color: white;
+    border-color: #2563eb;
+}
+
+.vuln-negligible {
+    background: linear-gradient(135deg, var(--cg-gray-dark) 0%, #4b5563 100%);
+    color: white;
+    border-color: #6b7280;
+}
+
+.vuln-unknown {
+    background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+    color: white;
+    border-color: #9ca3af;
+}
+
+.vuln-clean {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border-color: #10b981;
+    font-weight: 700;
+}
+
+.breakdown-error {
+    color: var(--cg-gray-dark);
+    font-style: italic;
+    font-weight: 500;
+}
+
+/* Enhanced table legend styling */
+.table-legend {
+    margin: 20px 0;
+    padding: 20px;
+    background: linear-gradient(135deg, rgba(208, 207, 238, 0.2) 0%, rgba(229, 231, 240, 0.2) 100%);
+    border-radius: 12px;
+    border: 2px solid var(--cg-light);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.legend-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.legend-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--cg-primary);
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.legend-note {
+    margin: 0;
+    font-size: 12px;
+    color: var(--cg-gray-dark);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.legend-icon {
+    background: var(--cg-accent);
+    color: white;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.legend-badges, .legend-indicators {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.legend-badge {
+    transform: scale(0.9);
+}
+
+.legend-text {
+    font-size: 12px;
+    color: var(--cg-primary);
+    font-weight: 500;
+    margin-right: 16px;
+}
+
+/* Print optimization for legend */
+@media print {
+    .table-legend {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        border: 2px solid var(--cg-primary);
+        box-shadow: 0 2px 4px rgba(20, 0, 61, 0.1);
+    }
+    
+    .legend-badges, .legend-indicators {
+        gap: 8px;
+    }
+    
+    .legend-text {
+        margin-right: 12px;
+    }
+}
+
+/* Enhanced Appendix with better page break handling */
 .appendix-content {
     text-align: left;
     padding: 24px;
     background: var(--cg-gray-light);
     border-radius: 8px;
     border: 2px solid var(--cg-light);
+    page-break-before: always;
+}
+
+.appendix-content h2 {
+    page-break-after: avoid;
+    margin-top: 0 !important;
+    margin-bottom: 20px;
 }
 
 .appendix-content h3 {
@@ -1279,11 +1554,14 @@ code {
     margin-top: 28px;
     color: var(--cg-primary);
     border-bottom-color: var(--cg-accent);
+    page-break-after: avoid;
+    page-break-before: auto;
 }
 
 .appendix-content ul {
     margin: 16px 0;
     padding-left: 24px;
+    page-break-inside: auto;
 }
 
 .appendix-content li {
@@ -1291,11 +1569,105 @@ code {
     line-height: 1.6;
     font-size: 12px;
     color: var(--cg-primary);
+    page-break-inside: avoid;
+}
+
+.appendix-content p {
+    orphans: 2;
+    widows: 2;
+    page-break-inside: auto;
 }
 
 .appendix-content strong {
     color: var(--cg-accent);
     font-weight: 600;
+}
+
+/* Appendix section grouping for better page breaks */
+.appendix-section {
+    page-break-inside: avoid;
+    margin-bottom: 32px;
+}
+
+.appendix-section:last-child {
+    margin-bottom: 0;
+}
+
+@media print {
+    .appendix-content {
+        page-break-before: always;
+        break-before: always;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        page: appendix;
+        page-break-inside: auto;
+        break-inside: auto;
+    }
+    
+    .appendix-content h3 {
+        page-break-after: avoid;
+        break-after: avoid;
+        page-break-before: auto;
+        break-before: auto;
+    }
+    
+    .appendix-content ul {
+        page-break-inside: auto;
+        break-inside: auto;
+    }
+    
+    .appendix-content li {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        orphans: 2;
+        widows: 2;
+    }
+    
+    .appendix-content p {
+        orphans: 2;
+        widows: 2;
+        page-break-inside: auto;
+        break-inside: auto;
+    }
+    
+    .appendix-section {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    
+    /* Strategic page break with continuation header */
+    .appendix-page-break {
+        page-break-before: always;
+        break-before: always;
+        margin-top: 0;
+        padding-top: 0;
+    }
+    
+    .appendix-continuation {
+        color: var(--cg-primary);
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0 0 20px 0 !important;
+        text-align: left;
+        border-bottom: 3px solid var(--cg-accent);
+        padding-bottom: 8px;
+        letter-spacing: -0.015em;
+        page-break-after: avoid;
+    }
+    
+    /* Chrome PDF export specific footer behavior - now inside appendix */
+    .appendix-content .footer {
+        page-break-before: avoid;
+        break-before: avoid;
+        page-break-inside: avoid;
+        break-inside: avoid;
+        margin-top: 30px;
+        border-radius: 8px;
+        background: var(--cg-white);
+        border: 2px solid var(--cg-light);
+    }
 }
 
 /* Professional Footer */
@@ -1309,6 +1681,8 @@ code {
     background: var(--cg-gray-light);
     border-radius: 0 0 8px 8px;
     font-weight: 500;
+    page-break-before: avoid;
+    page-break-inside: avoid;
 }
 
 /* Navbar - hidden in print */
@@ -1317,10 +1691,6 @@ code {
 }
 
 /* Utility classes */
-.page-break {
-    page-break-before: always;
-}
-
 .no-break {
     page-break-inside: avoid;
 }
@@ -1391,6 +1761,8 @@ Performance:
                        help='Maximum number of parallel scanning threads (default: 4)')
     parser.add_argument('--timeout-per-image', type=int, default=300,
                        help='Timeout in seconds per image scan (default: 300)')
+    parser.add_argument('-c', '--customer-name', 
+                       help='Customer name for report footer (default: "Customer")')
     
     args = parser.parse_args()
     
@@ -1425,7 +1797,7 @@ Performance:
         sys.exit(1)
     
     # Generate report (exec summary and appendix loaded inside with metrics)
-    scanner.generate_html_report(scan_results, args.exec_summary, args.output, args.appendix)
+    scanner.generate_html_report(scan_results, args.exec_summary, args.output, args.appendix, args.customer_name)
     
     # Report failed scans and rows
     if scanner.failed_rows:
