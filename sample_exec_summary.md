@@ -1,6 +1,6 @@
-### Security Vulnerability Assessment for Sample_Customer
+### Security Vulnerability Assessment for {{customer_name}}
 
-This comprehensive vulnerability assessment demonstrates the challenges that Sample_Customer face in managing CVE's at scale. Sample_Customer is not alone in this challenge as many in the industry are grappling with CVE spawl & controls around OSS. This report shows the significant security advantages of migrating from standard container images to **Chainguard's hardened alternatives**. Analysis of {{images_scanned}} container image pairs reveals a **{{reduction_percentage}} overall CVE reduction**, eliminating {{total_reduction}} vulnerabilities across your infrastructure.
+This comprehensive vulnerability assessment demonstrates the challenges that {{customer_name}} face in managing CVE's at scale. {{customer_name}} is not alone in this challenge as many in the industry are grappling with CVE spawl & controls around OSS. This report shows the significant security advantages of migrating from standard container images to **Chainguard's hardened alternatives**. Analysis of {{images_scanned}} container image pairs reveals a **{{reduction_percentage}} overall CVE reduction**, eliminating {{total_reduction}} vulnerabilities across your infrastructure.
 
 ### Key Findings
 
