@@ -1022,9 +1022,9 @@ code {
     position: absolute;
     top: 20px;
     left: 20px;
-    width: 80px;
+    width: 60px;
     height: auto;
-    max-height: 60px;
+    max-height: 45px;
 }
 
 .header-section p {
