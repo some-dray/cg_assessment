@@ -52,7 +52,7 @@ python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -e sample_exec_s
 python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -c "Acme Corporation"
 
 # Complete example with all options
-python3 cve_scanner.py -s sample_image_pairs.csv -o domain_report.html -e sample_exec_summary.md -a custom_appendix.md -c "Domain Group" --max-workers 8
+python3 cve_scanner.py -s sample.csv -o sample_customer.html -e sample_exec_summary.md -a appendix.md -c "sample_customer" --max-workers 2
 
 # Whitespace-separated format
 python3 cve_scanner.py -s sample_image_pairs.txt -o report.html
