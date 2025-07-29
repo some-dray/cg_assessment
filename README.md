@@ -51,6 +51,9 @@ python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -e sample_exec_s
 # With customer name for branding
 python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -c "Acme Corporation"
 
+# Complete example with all options
+python3 cve_scanner.py -s sample_image_pairs.csv -o domain_report.html -e sample_exec_summary.md -a custom_appendix.md -c "Domain Group" --max-workers 8
+
 # Whitespace-separated format
 python3 cve_scanner.py -s sample_image_pairs.txt -o report.html
 ```
@@ -195,6 +198,22 @@ The appendix structure will be:
 3. **Severity Levels** (standard)
 4. **About Chainguard Images** (standard, with provenance info)
 5. **Report Generation** (standard)
+
+## Customer Branding
+
+Use the `-c` flag to customize the report footer with your organization's name for professional branding:
+
+```bash
+python3 cve_scanner.py -s images.csv -o report.html -c "Your Organization"
+```
+
+This will generate a footer that reads: `"This report is Your Organization & Chainguard Confidential | Generated on [timestamp]"`
+
+**Benefits:**
+- **Professional appearance** for client-facing reports
+- **Brand consistency** across vulnerability assessments
+- **Customizable footers** for different business units or customers
+- **Default fallback** to "Customer" if no name is specified
 
 ## Retry Logic
 
