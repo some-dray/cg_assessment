@@ -225,8 +225,9 @@ When an image scan fails, the tool automatically:
 
 ## Executive Summary Template Variables
 
-The executive summary markdown file can use template variables that are automatically replaced with scan results:
+The executive summary and appendix markdown files can use template variables that are automatically replaced with scan results and customer information:
 
+**Scan Metrics:**
 - `{{images_scanned}}`: Number of image pairs successfully scanned
 - `{{total_customer_vulns}}`: Total vulnerabilities in customer images
 - `{{total_chainguard_vulns}}`: Total vulnerabilities in Chainguard images  
@@ -235,10 +236,16 @@ The executive summary markdown file can use template variables that are automati
 - `{{average_reduction_per_image}}`: Average % reduction per improved image
 - `{{images_with_reduction}}`: Number of images showing improvement
 
+**Customer Information:**
+- `{{customer_name}}`: Customer name from `-c` parameter (defaults to "Customer")
+
 **Example Usage:**
 ```markdown
-Analysis of {{images_scanned}} images shows **{{reduction_percentage}} CVE reduction**, 
-eliminating {{total_reduction}} vulnerabilities across your infrastructure.
+# Security Vulnerability Assessment for {{customer_name}}
+
+This comprehensive vulnerability assessment demonstrates the challenges that {{customer_name}} faces in managing CVEs at scale. Analysis of {{images_scanned}} images shows **{{reduction_percentage}} CVE reduction**, eliminating {{total_reduction}} vulnerabilities across your infrastructure.
+
+{{customer_name}} is not alone in this challenge, however this report shows the significant security advantages of migrating to Chainguard's hardened alternatives.
 ```
 
 ## CVE Reduction Metrics

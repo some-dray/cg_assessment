@@ -399,7 +399,7 @@ class CVEScanner:
             images = [img.strip() for img in source.split(',') if img.strip()]
             return images, []
     
-    def load_exec_summary(self, exec_file: Optional[str], metrics: Dict = None) -> str:
+    def load_exec_summary(self, exec_file: Optional[str], metrics: Dict = None, customer_name: Optional[str] = None) -> str:
         """Load and convert markdown executive summary to HTML with data interpolation"""
         if not exec_file or not os.path.isfile(exec_file):
             # Default summary with dynamic data if available
@@ -428,7 +428,7 @@ class CVEScanner:
             
             # Replace template variables if metrics are provided
             if metrics:
-                md_content = self._interpolate_template_variables(md_content, metrics)
+                md_content = self._interpolate_template_variables(md_content, metrics, customer_name)
             
             if MARKDOWN_AVAILABLE:
                 return markdown.markdown(md_content)
@@ -451,8 +451,8 @@ class CVEScanner:
             logger.warning(f"Failed to load executive summary: {e}")
             return "<p>Failed to load executive summary.</p>"
     
-    def _interpolate_template_variables(self, content: str, metrics: Dict) -> str:
-        """Replace template variables in content with actual metrics"""
+    def _interpolate_template_variables(self, content: str, metrics: Dict, customer_name: Optional[str] = None) -> str:
+        """Replace template variables in content with actual metrics and customer info"""
         replacements = {
             '{{images_scanned}}': str(metrics['images_scanned']),
             '{{total_customer_vulns}}': str(metrics['total_customer_vulns']),
@@ -460,7 +460,8 @@ class CVEScanner:
             '{{total_reduction}}': str(metrics['total_reduction']),
             '{{reduction_percentage}}': f"{metrics['reduction_percentage']}%",
             '{{average_reduction_per_image}}': f"{metrics['average_reduction_per_image']}%",
-            '{{images_with_reduction}}': str(metrics['images_with_reduction'])
+            '{{images_with_reduction}}': str(metrics['images_with_reduction']),
+            '{{customer_name}}': customer_name or "Customer"
         }
         
         for placeholder, value in replacements.items():
@@ -479,8 +480,8 @@ class CVEScanner:
         metrics = self.calculate_cve_reduction_metrics(scan_results)
         
         # Load executive summary and appendix with metrics data
-        exec_summary = self.load_exec_summary(exec_file, metrics)
-        appendix_content = self.load_appendix(appendix_file, metrics)
+        exec_summary = self.load_exec_summary(exec_file, metrics, customer_name)
+        appendix_content = self.load_appendix(appendix_file, metrics, customer_name)
         
         # Extract data from scan results
         customer_data = [result.customer_data for result in scan_results]
@@ -751,7 +752,7 @@ class CVEScanner:
         # Failed scans are now only reported in CLI output, not in HTML
         return ""
     
-    def load_appendix(self, appendix_file: Optional[str], metrics: Dict = None) -> str:
+    def load_appendix(self, appendix_file: Optional[str], metrics: Dict = None, customer_name: Optional[str] = None) -> str:
         """Load and convert markdown appendix to HTML with data interpolation"""
         
         # Default appendix content with strategic continuation headers for page breaks
@@ -808,7 +809,7 @@ class CVEScanner:
             
             # Replace template variables if metrics are provided
             if metrics:
-                md_content = self._interpolate_template_variables(md_content, metrics)
+                md_content = self._interpolate_template_variables(md_content, metrics, customer_name)
             
             # Convert custom appendix content to HTML
             if MARKDOWN_AVAILABLE:
