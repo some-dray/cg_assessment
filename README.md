@@ -43,16 +43,16 @@ The tool supports both CSV and whitespace-separated two-column formats with **pa
 
 ```bash
 # CSV format (best performance with parallel scanning)
-python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -e sample_exec_summary.md --max-workers 8
+python3 cve_scanner.py -s sample.csv -o report.html -e sample_exec_summary.md --max-workers 8
 
 # With custom appendix
-python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -e sample_exec_summary.md -a custom_appendix.md
+python3 cve_scanner.py -s sample.csv -o report.html -e sample_exec_summary.md -a custom_appendix.md
 
 # With customer name for branding
-python3 cve_scanner.py -s sample_image_pairs.csv -o report.html -c "Acme Corporation"
+python3 cve_scanner.py -s sample.csv -o report.html -c "Sameple Customer"
 
 # Complete example with all options
-python3 cve_scanner.py -s sample_image_pairs.csv -o domain_report.html -e sample_exec_summary.md -a custom_appendix.md -c "Domain Group" --max-workers 8
+python3 cve_scanner.py -s sample.csv -o sample_customer.html -e sample_exec_summary.md -a appendix.md -c "sample_customer" --max-workers 2
 
 # Whitespace-separated format
 python3 cve_scanner.py -s sample_image_pairs.txt -o report.html
