@@ -59,7 +59,7 @@ class CVEScanner:
     """Main CVE scanning and reporting class"""
     
     SEVERITY_ORDER = ['Critical', 'High', 'Medium', 'Low', 'Negligible', 'Unknown']
-    CHAINGUARD_LOGO_URL = "https://edu.chainguard.dev/logos/3d-linky.png"
+    CHAINGUARD_LOGO_URL = "Linky_White.png"
     
     def __init__(self):
         self.failed_scans = []
