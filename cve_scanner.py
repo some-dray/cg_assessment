@@ -521,16 +521,57 @@ class CVEScanner:
         </div>
 
         <!-- Image Comparison Table -->
-        <div class="image-comparison-section">
-            <h2>Images Scanned</h2>
+        <div class="image-comparison-section images-scanned-section">
+            <div class="images-header-container">
+                <h2>Images Scanned</h2>
+                
+                <!-- Color Key Legend -->
+                <div class="color-key-legend">
+                <div class="legend-content">
+                    <h3 class="legend-title">Vulnerability Severity Color Key:</h3>
+                    <div class="legend-squares">
+                        <div class="legend-item">
+                            <span class="vuln-square vuln-critical legend-square">C</span>
+                            <span class="legend-label">Critical</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="vuln-square vuln-high legend-square">H</span>
+                            <span class="legend-label">High</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="vuln-square vuln-medium legend-square">M</span>
+                            <span class="legend-label">Medium</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="vuln-square vuln-low legend-square">L</span>
+                            <span class="legend-label">Low</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="vuln-square vuln-negligible legend-square">N</span>
+                            <span class="legend-label">Negligible</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="vuln-square vuln-unknown legend-square">U</span>
+                            <span class="legend-label">Unknown</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="vuln-square vuln-clean legend-square"></span>
+                            <span class="legend-label">Clean</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="legend-description">Each square shows the count of vulnerabilities for that severity level.</p>
+                </div>
+            </div>
+            
             <div class="image-table-container">
                 <table>
                     <thead>
                         <tr>
                             <th>Your Image</th>
-                            <th>Total Vulnerabilities</th>
+                            <th>Vulnerability Breakdown</th>
                             <th>Chainguard Image</th>
-                            <th>Total Vulnerabilities</th>
+                            <th>Vulnerability Breakdown</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -635,11 +676,34 @@ class CVEScanner:
         return vuln_data.image_name
     
     def _format_vulnerability_breakdown(self, vuln_data: VulnerabilityData) -> str:
-        """Format vulnerability count as simple total number"""
+        """Format vulnerability count with color-coded square boxes for each severity"""
         if not vuln_data.scan_successful:
             return "-"
         
-        return str(vuln_data.total_vulnerabilities)
+        if vuln_data.total_vulnerabilities == 0:
+            return '<div class="vuln-squares-container"><span class="vuln-square vuln-clean"></span></div>'
+        
+        # Generate square boxes for each severity with counts
+        squares = []
+        severity_colors = {
+            'Critical': 'critical',
+            'High': 'high', 
+            'Medium': 'medium',
+            'Low': 'low',
+            'Negligible': 'negligible',
+            'Unknown': 'unknown'
+        }
+        
+        for severity in self.SEVERITY_ORDER:
+            count = vuln_data.severity_breakdown.get(severity, 0)
+            if count > 0:
+                css_class = severity_colors.get(severity, 'unknown')
+                squares.append(f'<span class="vuln-square vuln-{css_class}">{count}</span>')
+        
+        if not squares:
+            return '<div class="vuln-squares-container"><span class="vuln-square vuln-clean"></span></div>'
+        
+        return f'<div class="vuln-squares-container">{"".join(squares)}</div>'
     
     def calculate_cve_reduction_metrics(self, scan_results: List[ScanResult]) -> Dict:
         """Calculate CVE reduction metrics from scan results"""
@@ -842,8 +906,10 @@ class CVEScanner:
     
     /* Enhanced badge visibility in PDF */
     .vuln-badge {
-        border: 2px solid currentColor;
+        border: none;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        -webkit-print-color-adjust: exact;
+        color-adjust: exact;
     }
     
     
@@ -1099,24 +1165,30 @@ code {
     vertical-align: middle;
 }
 
-/* Severity indicator colors */
+/* Severity indicator colors - updated to match light background theme */
 .severity-indicator.critical { 
-    background: #dc2626;
+    background: #f2e4f8;
+    border: 1px solid #c08ad5;
 }
 .severity-indicator.high { 
-    background: #ea580c;
+    background: #fbe7e8;
+    border: 1px solid #ee7f78;
 }
 .severity-indicator.medium { 
-    background: #d97706;
+    background: #fcebcc;
+    border: 1px solid #f3ad56;
 }
 .severity-indicator.low { 
-    background: var(--cg-secondary);
+    background: #fefad3;
+    border: 1px solid #f7d959;
 }
 .severity-indicator.negligible { 
-    background: var(--cg-gray-dark);
+    background: #e8ecef;
+    border: 1px solid #b8c2ca;
 }
 .severity-indicator.unknown { 
-    background: #9ca3af;
+    background: #fafbfb;
+    border: 1px solid #8b8d8f;
 }
 
 /* Enhanced sections */
@@ -1136,6 +1208,27 @@ code {
     margin-top: 0;
     color: var(--cg-primary);
     page-break-after: avoid;
+    break-after: avoid;
+}
+
+/* Force Images Scanned section to start on new page */
+.images-scanned-section {
+    page-break-before: always !important;
+    break-before: always !important;
+}
+
+/* Container to keep header and legend together */
+.images-header-container {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+}
+
+/* Ensure Images Scanned header and color key stay together */
+.image-comparison-section h2 + .color-key-legend {
+    page-break-before: avoid;
+    break-before: avoid;
 }
 
 /* Make first section directly adjacent to header */
@@ -1235,7 +1328,7 @@ code {
 .image-table-container td {
     padding: 16px 12px;
     border-bottom: 1px solid var(--cg-gray-medium);
-    text-align: center;
+    text-align: left;
     font-size: 12px;
     vertical-align: middle;
     word-wrap: break-word;
@@ -1328,7 +1421,7 @@ code {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border: 1px solid transparent;
+    border: none;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
@@ -1342,47 +1435,47 @@ code {
     font-size: 11px;
 }
 
-/* Severity-specific badge colors */
+/* Severity-specific badge colors - updated to match light background theme */
 .vuln-critical {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border-color: #b91c1c;
+    background-color: #f2e4f8;
+    color: #82349d;
+    border: 1px solid #c08ad5;
 }
 
 .vuln-high {
-    background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
-    color: white;
-    border-color: #dc2626;
+    background-color: #fbe7e8;
+    color: #98362e;
+    border: 1px solid #ee7f78;
 }
 
 .vuln-medium {
-    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-    color: white;
-    border-color: #c2410c;
+    background-color: #fcebcc;
+    color: #a1531e;
+    border: 1px solid #f3ad56;
 }
 
 .vuln-low {
-    background: linear-gradient(135deg, var(--cg-secondary) 0%, #1e40af 100%);
-    color: white;
-    border-color: #2563eb;
+    background-color: #fefad3;
+    color: #76651d;
+    border: 1px solid #f7d959;
 }
 
 .vuln-negligible {
-    background: linear-gradient(135deg, var(--cg-gray-dark) 0%, #4b5563 100%);
-    color: white;
-    border-color: #6b7280;
+    background-color: #e8ecef;
+    color: #4d5b6a;
+    border: 1px solid #b8c2ca;
 }
 
 .vuln-unknown {
-    background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
-    color: white;
-    border-color: #9ca3af;
+    background-color: #fafbfb;
+    color: #4d5b6a;
+    border: 1px solid #8b8d8f;
 }
 
 .vuln-clean {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
-    border-color: #10b981;
+    background-color: var(--cg-success);
+    color: var(--cg-primary);
+    border: none;
     font-weight: 700;
 }
 
@@ -1659,6 +1752,233 @@ em {
     letter-spacing: 0.05em;
     font-weight: 500;
     color: var(--cg-gray-dark);
+}
+
+/* Vulnerability square boxes styling */
+.vuln-squares-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    justify-content: flex-start;
+    align-items: center;
+    padding: 4px;
+    min-height: 24px;
+}
+
+.vuln-square {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 800;
+    text-shadow: none;
+    border: 1px solid;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    margin: 1px;
+    min-width: 26px;
+    text-align: center;
+    line-height: 1;
+}
+
+/* Severity-specific square colors with light backgrounds and dark text */
+.vuln-square.vuln-critical {
+    background-color: #f2e4f8;
+    color: #82349d;
+    border-color: #c08ad5;
+}
+
+.vuln-square.vuln-high {
+    background-color: #fbe7e8;
+    color: #98362e;
+    border-color: #ee7f78;
+}
+
+.vuln-square.vuln-medium {
+    background-color: #fcebcc;
+    color: #a1531e;
+    border-color: #f3ad56;
+}
+
+.vuln-square.vuln-low {
+    background-color: #fefad3;
+    color: #76651d;
+    border-color: #f7d959;
+}
+
+.vuln-square.vuln-negligible {
+    background-color: #e8ecef;
+    color: #4d5b6a;
+    border-color: #b8c2ca;
+}
+
+.vuln-square.vuln-unknown {
+    background-color: #fafbfb;
+    color: #4d5b6a;
+    border-color: #8b8d8f;
+}
+
+.vuln-square.vuln-clean {
+    background-color: var(--cg-success);
+    color: var(--cg-primary);
+    border-color: var(--cg-success);
+    width: 28px;
+    font-weight: 800;
+}
+
+/* Responsive sizing for smaller counts */
+.vuln-square[data-count="1"], .vuln-square[data-count="2"], .vuln-square[data-count="3"] {
+    width: 22px;
+    height: 22px;
+    font-size: 10px;
+    min-width: 22px;
+}
+
+/* Color Key Legend Styling - Compact horizontal layout */
+.color-key-legend {
+    margin: 15px 0 20px 0;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, rgba(208, 207, 238, 0.08) 0%, rgba(229, 231, 240, 0.08) 100%);
+    border: 1px solid var(--cg-light);
+    border-radius: 8px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+.legend-content {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.color-key-legend .legend-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--cg-primary);
+    margin: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.legend-squares {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    flex: 1;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.legend-square {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    flex-shrink: 0;
+}
+
+.legend-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--cg-primary);
+    white-space: nowrap;
+}
+
+.legend-description {
+    font-size: 11px;
+    color: var(--cg-gray-dark);
+    margin: 8px 0 0 0;
+    line-height: 1.4;
+    font-style: italic;
+}
+
+/* PDF print optimizations for squares */
+@media print {
+    /* Force Images Scanned to start on new page */
+    .images-scanned-section {
+        page-break-before: always !important;
+        break-before: always !important;
+    }
+    
+    /* Prevent breaking of header and legend container */
+    .images-header-container {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+    }
+    
+    .color-key-legend {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-before: avoid !important;
+        break-before: avoid !important;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+    }
+    
+    .vuln-squares-container {
+        gap: 1px;
+        padding: 2px;
+    }
+    
+    .vuln-square {
+        -webkit-print-color-adjust: exact;
+        color-adjust: exact;
+        border: none;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    
+    .vuln-square {
+        border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    }
+    
+    .vuln-square.vuln-low {
+        color: black !important;
+        text-shadow: none !important;
+    }
+    
+    .vuln-square.vuln-clean {
+        color: var(--cg-primary) !important;
+        text-shadow: none !important;
+    }
+    
+    .color-key-legend {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        border: 1px solid var(--cg-primary);
+        background: rgba(248, 249, 252, 0.5);
+        margin: 10px 0 15px 0;
+        padding: 12px 16px;
+    }
+    
+    .legend-content {
+        gap: 16px;
+    }
+    
+    .legend-squares {
+        gap: 12px;
+    }
+    
+    .legend-item {
+        gap: 4px;
+    }
+    
+    .legend-description {
+        margin: 6px 0 0 0;
+    }
 }"""
     
     def _get_current_datetime(self) -> str:
