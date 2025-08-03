@@ -530,7 +530,7 @@ class CVEScanner:
                         <tr>
                             <th>Your Image</th>
                             <th>Total Vulnerabilities</th>
-                            <th>Chainguard Image</th>
+                            <th>Chainguard Image <span style="font-size: 0.8em; font-weight: normal;">(cgr.dev)</span></th>
                             <th>Total Vulnerabilities</th>
                         </tr>
                     </thead>
@@ -565,8 +565,14 @@ class CVEScanner:
 </body>
 </html>"""
         
-        # Clean up chainguard-private references in the HTML content
-        html_content = html_content.replace("chainguard-private", "chainguard")
+        # Clean up chainguard image references - remove registry path from cgr.dev images
+        import re
+        # Replace cgr.dev/chainguard-private/imagename:tag with just imagename:tag
+        html_content = re.sub(r'cgr\.dev/chainguard-private/([^<\s]+)', r'\1', html_content)
+        # Replace cgr.dev/chainguard/imagename:tag with just imagename:tag  
+        html_content = re.sub(r'cgr\.dev/chainguard/([^<\s]+)', r'\1', html_content)
+        # Replace cgr.dev/cg/imagename:tag with just imagename:tag
+        html_content = re.sub(r'cgr\.dev/cg/([^<\s]+)', r'\1', html_content)
         
         # Write HTML file
         with open(output_file, 'w') as f:
@@ -899,14 +905,18 @@ class CVEScanner:
     .vuln-badge {
         border: 1px solid currentColor !important;
         box-shadow: none !important;
-        font-size: 8px !important;
+        font-size: 10px !important;
         padding: 1px 3px !important;
-        min-width: 18px !important;
+        min-width: 16px !important;
+        line-height: 1 !important;
+        flex-shrink: 0 !important;
     }
     
     .vuln-breakdown-container {
         gap: 1px !important;
         padding: 2px !important;
+        flex-wrap: nowrap !important;
+        white-space: nowrap !important;
     }
     
     .vuln-code {
@@ -935,8 +945,8 @@ class CVEScanner:
     }
     
     .severity-indicator {
-        width: 10px;
-        height: 10px;
+        width: 16px;
+        height: 16px;
     }
 }
 
@@ -1163,9 +1173,9 @@ code {
 
 .severity-indicator {
     display: inline-block;
-    width: 12px;
-    height: 12px;
-    border-radius: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
     margin-right: 8px;
     vertical-align: middle;
 }
@@ -1419,9 +1429,9 @@ code {
     display: inline-flex;
     align-items: center;
     gap: 1px;
-    padding: 2px 4px;
+    padding: 3px 4px;
     border-radius: 4px;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -1429,6 +1439,7 @@ code {
     white-space: nowrap;
     min-width: 20px;
     justify-content: center;
+    line-height: 1;
 }
 
 .vuln-code {

@@ -63,8 +63,28 @@
     
     /* Enhanced badge visibility in PDF */
     .vuln-badge {
-        border: 2px solid currentColor;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        border: 1px solid currentColor !important;
+        box-shadow: none !important;
+        font-size: 10px !important;
+        padding: 1px 3px !important;
+        min-width: 16px !important;
+        line-height: 1 !important;
+        flex-shrink: 0 !important;
+    }
+    
+    .vuln-breakdown-container {
+        gap: 1px !important;
+        padding: 2px !important;
+        flex-wrap: nowrap !important;
+        white-space: nowrap !important;
+    }
+    
+    .vuln-code {
+        font-size: 7px !important;
+    }
+    
+    .vuln-count {
+        font-size: 8px !important;
     }
     
     
@@ -85,8 +105,8 @@
     }
     
     .severity-indicator {
-        width: 10px;
-        height: 10px;
+        width: 16px;
+        height: 16px;
     }
 }
 
@@ -313,37 +333,43 @@ code {
 
 .severity-indicator {
     display: inline-block;
-    width: 12px;
-    height: 12px;
-    border-radius: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
     margin-right: 8px;
     vertical-align: middle;
 }
 
-/* Severity indicator colors */
+/* Severity indicator colors with new color scheme */
 .severity-indicator.critical { 
     background: #f2e4f8;
+    color: #82349d;
     border: 1px solid #c08ad5;
 }
 .severity-indicator.high { 
     background: #fbe7e8;
+    color: #98362e;
     border: 1px solid #ee7f78;
 }
 .severity-indicator.medium { 
     background: #fcebcc;
+    color: #a1531e;
     border: 1px solid #f3ad56;
 }
 .severity-indicator.low { 
     background: #fefad3;
+    color: #76651d;
     border: 1px solid #f7d959;
 }
 .severity-indicator.negligible { 
     background: #e8ecef;
+    color: #4d5b6a;
     border: 1px solid #b8c2ca;
 }
 .severity-indicator.unknown { 
-    background: #fafbfb;
-    border: 1px solid #8b8d8f;
+    background: #ffffff;
+    color: #4d5b6a;
+    border: 1px solid #b8c2ca;
 }
 
 /* Enhanced sections */
@@ -357,6 +383,19 @@ code {
     box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
     page-break-inside: avoid;
     page-break-before: avoid;
+}
+
+/* Add page break before Images Scanned section */
+.images-scanned-section {
+    margin-top: 40px;
+    margin-bottom: 40px;
+    padding: 20px;
+    border: 2px solid var(--cg-light);
+    background: var(--cg-white);
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
+    page-break-inside: avoid;
+    page-break-before: always;
 }
 
 .image-comparison-section h2 {
@@ -462,7 +501,7 @@ code {
 .image-table-container td {
     padding: 16px 12px;
     border-bottom: 1px solid var(--cg-gray-medium);
-    text-align: center;
+    text-align: left;
     font-size: 12px;
     vertical-align: middle;
     word-wrap: break-word;
@@ -470,27 +509,6 @@ code {
     page-break-inside: avoid;
     break-inside: avoid;
     line-height: 1.5;
-}
-
-/* Force Images Scanned section to start on new page */
-.images-scanned-section {
-    page-break-before: always !important;
-    break-before: always !important;
-}
-
-/* Specific column alignments for Images Scanned table */
-.image-table-container th:nth-child(1),
-.image-table-container td:nth-child(1),
-.image-table-container th:nth-child(3),
-.image-table-container td:nth-child(3) {
-    text-align: left;
-}
-
-.image-table-container th:nth-child(2),
-.image-table-container td:nth-child(2),
-.image-table-container th:nth-child(4),
-.image-table-container td:nth-child(4) {
-    text-align: center;
 }
 
 .image-table-container thead th {
@@ -547,7 +565,7 @@ code {
     font-weight: 700;
     font-size: 14px;
     color: var(--cg-primary);
-    text-align: center;
+    text-align: left;
 }
 
 .no-match {
@@ -556,75 +574,81 @@ code {
     font-weight: 500;
 }
 
-/* Enhanced vulnerability breakdown styling */
+/* Enhanced vulnerability breakdown styling for table cells */
 .vuln-breakdown-container {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    justify-content: center;
+    gap: 2px;
+    justify-content: flex-start;
     align-items: center;
-    padding: 2px;
+    padding: 4px 2px;
+    line-height: 1.2;
 }
 
 .vuln-badge {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    padding: 3px 6px;
-    border-radius: 12px;
-    font-size: 10px;
+    gap: 1px;
+    padding: 3px 4px;
+    border-radius: 4px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border: 1px solid transparent;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    letter-spacing: 0.3px;
+    border: 1px solid;
+    white-space: nowrap;
+    min-width: 20px;
+    justify-content: center;
+    line-height: 1;
 }
 
 .vuln-code {
     font-weight: 700;
     opacity: 0.9;
+    font-size: 8px;
 }
 
 .vuln-count {
     font-weight: 800;
-    font-size: 11px;
+    font-size: 9px;
+    margin-left: 1px;
 }
 
-/* Severity-specific badge colors */
+/* Severity-specific badge colors with new color scheme */
 .vuln-critical {
-    background-color: #f2e4f8;
+    background: #f2e4f8;
     color: #82349d;
     border-color: #c08ad5;
 }
 
 .vuln-high {
-    background-color: #fbe7e8;
+    background: #fbe7e8;
     color: #98362e;
     border-color: #ee7f78;
 }
 
 .vuln-medium {
-    background-color: #fcebcc;
+    background: #fcebcc;
     color: #a1531e;
     border-color: #f3ad56;
 }
 
 .vuln-low {
-    background-color: #fefad3;
+    background: #fefad3;
     color: #76651d;
     border-color: #f7d959;
 }
 
 .vuln-negligible {
-    background-color: #e8ecef;
+    background: #e8ecef;
     color: #4d5b6a;
     border-color: #b8c2ca;
 }
 
 .vuln-unknown {
-    background-color: #fafbfb;
+    background: #ffffff;
     color: #4d5b6a;
-    border-color: #8b8d8f;
+    border-color: #b8c2ca;
 }
 
 .vuln-clean {
@@ -908,6 +932,78 @@ em {
     font-weight: 500;
     color: var(--cg-gray-dark);
 }
+
+/* Vulnerability legend styling */
+.vulnerability-legend {
+    margin: 20px 0 30px 0;
+    padding: 16px 20px;
+    background: var(--cg-gray-light);
+    border: 2px solid var(--cg-light);
+    border-radius: 8px;
+    page-break-inside: avoid;
+}
+
+.vulnerability-legend h3 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--cg-primary);
+    border: none;
+    padding: 0;
+    text-align: left;
+}
+
+.legend-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.legend-badge {
+    transform: scale(1.1);
+}
+
+.legend-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--cg-primary);
+}
+
+@media print {
+    .vulnerability-legend {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        margin: 15px 0 20px 0;
+        padding: 12px 16px;
+    }
+    
+    .legend-items {
+        gap: 12px;
+    }
+    
+    .legend-item {
+        gap: 4px;
+    }
+    
+    .legend-badge {
+        transform: scale(1.0);
+    }
+    
+    .legend-label {
+        font-size: 11px;
+    }
+}
+
+
     </style>
 </head>
 <body>
@@ -921,14 +1017,14 @@ em {
         <!-- Executive Summary -->
         <div class="image-comparison-section no-break">
             <h2>Executive Summary</h2>
-            <p><h3>Security Vulnerability Assessment for Sample-Customer</h3></p><p>This comprehensive vulnerability assessment demonstrates the challenges that Sample-Customer face in managing CVE's at scale. Sample-Customer is not alone in this challenge as many in the industry are grappling with CVE spawl & controls around OSS. This report shows the significant security advantages of migrating from standard container images to <strong>Chainguard's hardened alternatives</strong>. Analysis of 3 container image pairs reveals a <strong>99.7% overall CVE reduction</strong>, eliminating 1056 vulnerabilities across your infrastructure.</p><p><h3>Key Findings</h3></p><ul><li><strong>Significant Vulnerability Reduction</strong>: 3 of 3 images show measurable improvement with Chainguard alternatives</li>
+            <p><h3>Security Vulnerability Assessment for Sample-Customer</h3></p><p>This comprehensive vulnerability assessment demonstrates the challenges that Sample-Customer face in managing CVE's at scale. Sample-Customer is not alone in this challenge as many in the industry are grappling with CVE spawl & controls around OSS. This report shows the significant security advantages of migrating from standard container images to <strong>Chainguard's hardened alternatives</strong>. Analysis of 3 container image pairs reveals a <strong>99.7% overall CVE reduction</strong>, eliminating 1058 vulnerabilities across your infrastructure.</p><p><h3>Key Findings</h3></p><ul><li><strong>Significant Vulnerability Reduction</strong>: 3 of 3 images show measurable improvement with Chainguard alternatives</li>
 <li><strong>Average Per-Image Improvement</strong>: 98.4% average CVE reduction per improved image</li>
-<li><strong>Total Impact</strong>: 1059 vulnerabilities in current images reduced to 3 with Chainguard</li>
+<li><strong>Total Impact</strong>: 1061 vulnerabilities in current images reduced to 3 with Chainguard</li>
 <li><strong>Reduced Attack Surface</strong>: Distroless and minimal base images eliminate unnecessary components</li>
 <li><strong>Faster Remediation</strong>: Streamlined images enable quicker security updates and patches</li></ul><p><h3>Business Impact</h3></p><p><strong>Overall Business Value</strong> A direct cost savings can be calculated as follows. 1-4hrs to resolve a CVE when you consider the research, business process/approvals and actual engineering effort. 
 The equates to a cost of over <strong>$2.7m</strong> based on average wage/engineering effort metrics.</p><ul><li><strong>Enhanced Security Posture</strong>: 99.7% reduction translates to significantly lower risk of a breach</li>
 <li><strong>Compliance Readiness</strong>: Fewer vulnerabilities mean easier security compliance achievement </li>
-<li><strong>Operational Efficiency</strong>: 1056 fewer CVEs to track, patch, and manage</li>
+<li><strong>Operational Efficiency</strong>: 1058 fewer CVEs to track, patch, and manage</li>
 <li><strong>Developer Productivity</strong>: Less time addressing security issues, more time on shipping value to the business</li></ul><p><h3>Recommendation</h3></p><p>With demonstrated <strong>99.7% CVE reduction</strong> across 3 analyzed images, we strongly recommend transitioning to Chainguard images as part of your DevSecOps strategy to mature security practices and reduce operational toil across platform, security, and development teams.
 </p>
         </div>
@@ -941,7 +1037,7 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
                     99.7%
                     <span>CVE Reduction</span>
                 </div>
-                <p style="text-align: center; margin: 0; font-size: 16px; color: var(--cg-primary);"><strong>1056</strong> fewer vulnerabilities with Chainguard images</p>
+                <p style="text-align: center; margin: 0; font-size: 16px; color: var(--cg-primary);"><strong>1058</strong> fewer vulnerabilities with Chainguard images</p>
             </div>
             
             <!-- Overview Section within CVE Reduction Analysis -->
@@ -951,7 +1047,7 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
                     <div class="summary-column-content">
                         <h2>Your Images</h2>
                         <div class="total-box customer-total">
-                            1059
+                            1061
                             <span>Total Vulnerabilities</span>
                         </div>
                         <table class="summary-table">
@@ -972,7 +1068,7 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
                                 </tr>
                                 <tr>
                                     <td><span class="severity-indicator medium"></span>Medium</td>
-                                    <td class="severity-count">161</td>
+                                    <td class="severity-count">159</td>
                                 </tr>
                                 <tr>
                                     <td><span class="severity-indicator low"></span>Low</td>
@@ -980,7 +1076,7 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
                                 </tr>
                                 <tr>
                                     <td><span class="severity-indicator negligible"></span>Negligible</td>
-                                    <td class="severity-count">694</td>
+                                    <td class="severity-count">698</td>
                                 </tr>
                                 <tr>
                                     <td><span class="severity-indicator unknown"></span>Unknown</td>
@@ -1039,15 +1135,50 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
         </div>
 
         <!-- Image Comparison Table -->
-        <div class="image-comparison-section images-scanned-section">
+        <div class="images-scanned-section">
             <h2>Images Scanned</h2>
+            
+            <div class="vulnerability-legend">
+                <h3>Vulnerability Severity Legend</h3>
+                <div class="legend-items">
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-critical legend-badge">C</span>
+                        <span class="legend-label">Critical</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-high legend-badge">H</span>
+                        <span class="legend-label">High</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-medium legend-badge">M</span>
+                        <span class="legend-label">Medium</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-low legend-badge">L</span>
+                        <span class="legend-label">Low</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-negligible legend-badge">N</span>
+                        <span class="legend-label">Negligible</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-unknown legend-badge">U</span>
+                        <span class="legend-label">Unknown</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-clean legend-badge">Clean</span>
+                        <span class="legend-label">No Vulnerabilities</span>
+                    </div>
+                </div>
+            </div>
+        
             <div class="image-table-container">
                 <table>
                     <thead>
                         <tr>
                             <th>Your Image</th>
                             <th>Total Vulnerabilities</th>
-                            <th>Chainguard Image</th>
+                            <th>Chainguard Image <span style="font-size: 0.8em; font-weight: normal;">(cgr.dev)</span></th>
                             <th>Total Vulnerabilities</th>
                         </tr>
                     </thead>
@@ -1057,12 +1188,12 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
                     <td class="image-name-cell">
                         <code class="image-name">nginx:latest</code>
                     </td>
-                    <td class="vulnerability-count">146</td>
+                    <td class="vulnerability-count"><div class="vuln-breakdown-container"><span class="vuln-badge vuln-critical">3</span><span class="vuln-badge vuln-high">17</span><span class="vuln-badge vuln-medium">28</span><span class="vuln-badge vuln-low">9</span><span class="vuln-badge vuln-negligible">90</span></div></td>
                     <td class="image-name-cell">
-                        <code class="image-name">cgr.dev/chainguard/nginx:latest</code>
+                        <code class="image-name">nginx:latest</code>
                     </td>
                     <td class="vulnerability-count">
-                        0
+                        <div class="vuln-breakdown-container"><span class="vuln-badge vuln-clean">Clean</span></div>
                     </td>
                 </tr>
             
@@ -1070,12 +1201,12 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
                     <td class="image-name-cell">
                         <code class="image-name">alpine/java:21</code>
                     </td>
-                    <td class="vulnerability-count">43</td>
+                    <td class="vulnerability-count"><div class="vuln-breakdown-container"><span class="vuln-badge vuln-critical">2</span><span class="vuln-badge vuln-high">12</span><span class="vuln-badge vuln-medium">20</span><span class="vuln-badge vuln-low">9</span></div></td>
                     <td class="image-name-cell">
-                        <code class="image-name">cgr.dev/chainguard/jdk:openjdk-21</code>
+                        <code class="image-name">jdk:openjdk-21</code>
                     </td>
                     <td class="vulnerability-count">
-                        2
+                        <div class="vuln-breakdown-container"><span class="vuln-badge vuln-low">2</span></div>
                     </td>
                 </tr>
             
@@ -1083,12 +1214,12 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
                     <td class="image-name-cell">
                         <code class="image-name">python:latest</code>
                     </td>
-                    <td class="vulnerability-count">870</td>
+                    <td class="vulnerability-count"><div class="vuln-breakdown-container"><span class="vuln-badge vuln-critical">10</span><span class="vuln-badge vuln-high">67</span><span class="vuln-badge vuln-medium">111</span><span class="vuln-badge vuln-low">75</span><span class="vuln-badge vuln-negligible">608</span></div></td>
                     <td class="image-name-cell">
-                        <code class="image-name">cgr.dev/chainguard/python:latest</code>
+                        <code class="image-name">python:latest</code>
                     </td>
                     <td class="vulnerability-count">
-                        1
+                        <div class="vuln-breakdown-container"><span class="vuln-badge vuln-high">1</span></div>
                     </td>
                 </tr>
             
@@ -1161,7 +1292,7 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
             
             <!-- Footer integrated within appendix container -->
             <div class="footer">
-                <p>This report is Sample-Customer & Chainguard Confidential | Generated on 2025-08-03 16:10:13</p>
+                <p>This report is Sample-Customer & Chainguard Confidential | Generated on 2025-08-04 08:51:05</p>
             </div>
         </div>
     </div>
