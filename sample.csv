@@ -2,4 +2,3 @@ Chainguard_Image,Customer_image
 cgr.dev/chainguard-private/jdk:openjdk-21,alpine/java:21
 cgr.dev/chainguard-private/python:latest,python:latest
 cgr.dev/chainguard-private/nginx:latest,nginx:latest
-cgr.dev/chainguard-private/tritonserver-vllm-backend:latest,nvcr.io/nvidia/tritonserver:latest

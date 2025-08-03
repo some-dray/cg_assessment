@@ -290,114 +290,58 @@ class CVEScanner:
         return successful_results
     
     def parse_image_pairs_from_file(self, file_path: str) -> List[ImagePair]:
-        """Parse image pairs from a two-column file format (supports CSV and whitespace-separated)"""
+        """Parse image pairs from a CSV file format"""
         image_pairs = []
         
-        # Determine if it's a CSV file
-        is_csv = file_path.lower().endswith('.csv')
+        # Only accept CSV files
+        if not file_path.lower().endswith('.csv'):
+            logger.error(f"Only CSV files are supported. Got: {file_path}")
+            return []
         
         with open(file_path, 'r') as f:
-            if is_csv:
-                # Parse as CSV
-                csv_reader = csv.reader(f)
-                for line_num, row in enumerate(csv_reader, 1):
-                    # Skip empty rows
-                    if not row or len(row) == 0:
-                        continue
-                    
-                    # Skip header row if it contains common header keywords
-                    if line_num == 1 and len(row) >= 2:
-                        if any(keyword in str(row[0]).lower() for keyword in ['chainguard', 'customer', 'image']) or \
-                           any(keyword in str(row[1]).lower() for keyword in ['chainguard', 'customer', 'image']):
-                            continue
-                    
-                    # Skip comment rows (first cell starts with #)
-                    if str(row[0]).strip().startswith('#'):
-                        continue
-                    
-                    if len(row) < 2:
-                        logger.warning(f"CSV row {line_num}: Expected at least 2 columns, got {len(row)}. Skipping.")
-                        continue
-                    
-                    chainguard_image = str(row[0]).strip()
-                    customer_image = str(row[1]).strip()
-                    
-                    if chainguard_image and customer_image:
-                        image_pairs.append(ImagePair(chainguard_image, customer_image))
-            else:
-                # Parse as whitespace-separated format
-                lines = f.readlines()
+            csv_reader = csv.reader(f)
+            for line_num, row in enumerate(csv_reader, 1):
+                # Skip empty rows
+                if not row or len(row) == 0:
+                    continue
                 
-                for line_num, line in enumerate(lines, 1):
-                    line = line.strip()
-                    
-                    # Skip empty lines and comments
-                    if not line or line.startswith('#'):
+                # Skip header row if it contains common header keywords
+                if line_num == 1 and len(row) >= 2:
+                    if any(keyword in str(row[0]).lower() for keyword in ['chainguard', 'customer', 'image']) or \
+                       any(keyword in str(row[1]).lower() for keyword in ['chainguard', 'customer', 'image']):
                         continue
-                    
-                    # Skip header line if it contains common header keywords
-                    if any(keyword in line.lower() for keyword in ['chainguard', 'customer', 'image']):
-                        continue
-                    
-                    # Split by whitespace (tabs or multiple spaces)
-                    parts = line.split()
-                    
-                    if len(parts) != 2:
-                        logger.warning(f"Line {line_num}: Expected 2 columns, got {len(parts)}. Skipping: {line}")
-                        continue
-                    
-                    chainguard_image, customer_image = parts
+                
+                # Skip comment rows (first cell starts with #)
+                if str(row[0]).strip().startswith('#'):
+                    continue
+                
+                if len(row) < 2:
+                    logger.warning(f"CSV row {line_num}: Expected at least 2 columns, got {len(row)}. Skipping.")
+                    continue
+                
+                chainguard_image = str(row[0]).strip()
+                customer_image = str(row[1]).strip()
+                
+                if chainguard_image and customer_image:
                     image_pairs.append(ImagePair(chainguard_image, customer_image))
         
         return image_pairs
     
-    def find_chainguard_equivalent(self, customer_image: str) -> str:
-        """Find the Chainguard equivalent for a customer image (legacy mode)"""
-        # Simple mapping logic for legacy mode
-        base_image = customer_image.split(':')[0].split('/')[-1]
-        
-        # Common Chainguard image mappings
-        chainguard_mappings = {
-            'nginx': 'cgr.dev/chainguard/nginx',
-            'python': 'cgr.dev/chainguard/python',
-            'node': 'cgr.dev/chainguard/node',
-            'alpine': 'cgr.dev/chainguard/alpine-base',
-            'ubuntu': 'cgr.dev/chainguard/alpine-base',
-            'redis': 'cgr.dev/chainguard/redis',
-            'postgres': 'cgr.dev/chainguard/postgres',
-            'mysql': 'cgr.dev/chainguard/mysql',
-            'golang': 'cgr.dev/chainguard/go',
-            'java': 'cgr.dev/chainguard/jre',
-            'openjdk': 'cgr.dev/chainguard/jre',
-        }
-        
-        for key, chainguard_image in chainguard_mappings.items():
-            if key in base_image.lower():
-                return chainguard_image
-        
-        # Default fallback
-        return f"cgr.dev/chainguard/{base_image}"
     
-    def parse_source_input(self, source: str) -> Tuple[List[str], List[ImagePair]]:
-        """Parse source input - returns (legacy_images, image_pairs)"""
+    def parse_source_input(self, source: str) -> List[ImagePair]:
+        """Parse source input - returns image_pairs from CSV file"""
         if os.path.isfile(source):
-            # Try to parse as two-column format first
-            try:
-                image_pairs = self.parse_image_pairs_from_file(source)
-                if image_pairs:
-                    logger.info(f"Parsed {len(image_pairs)} image pairs from file")
-                    return [], image_pairs
-            except Exception as e:
-                logger.warning(f"Failed to parse as image pairs, trying legacy format: {e}")
-            
-            # Fallback to legacy single-column format
-            with open(source, 'r') as f:
-                images = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-            return images, []
+            # Parse as CSV format
+            image_pairs = self.parse_image_pairs_from_file(source)
+            if image_pairs:
+                logger.info(f"Parsed {len(image_pairs)} image pairs from CSV file")
+                return image_pairs
+            else:
+                logger.error(f"No valid image pairs found in CSV file: {source}")
+                return []
         else:
-            # Single image or comma-separated list (legacy format)
-            images = [img.strip() for img in source.split(',') if img.strip()]
-            return images, []
+            logger.error(f"Source must be a CSV file path: {source}")
+            return []
     
     def load_exec_summary(self, exec_file: Optional[str], metrics: Dict = None, customer_name: Optional[str] = None) -> str:
         """Load and convert markdown executive summary to HTML with data interpolation"""
@@ -1728,21 +1672,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # CSV format (recommended for performance):
+  # CSV format:
   %(prog)s -s image_pairs.csv -o report.html -e summary.md --max-workers 8
   
-  # Two-column whitespace-separated format:
-  %(prog)s -s image_pairs.txt -o report.html
-  
-  # Legacy single image:
-  %(prog)s -s nginx:latest -o report.html
-  
-  # Legacy comma-separated images:
-  %(prog)s -s "nginx:latest,python:3.9" -o report.html
+  # With custom appendix and customer name:
+  %(prog)s -s image_pairs.csv -o report.html -e summary.md -a appendix.md -c "Customer Name"
 
-File Formats:
+File Format:
   CSV: Chainguard_Image,Customer_Image
-  Whitespace: Chainguard_Image    Customer_Image
   
 Performance:
   Use --max-workers to control parallel scanning (default: 4)
@@ -1751,7 +1688,7 @@ Performance:
     )
     
     parser.add_argument('-s', '--source', required=True,
-                       help='Source: two-column file (Chainguard Customer), single image, comma-separated list, or single-column file')
+                       help='Source: CSV file with Chainguard and Customer image pairs')
     parser.add_argument('-o', '--output', required=True,
                        help='Output HTML file path')
     parser.add_argument('-e', '--exec-summary', 
@@ -1773,24 +1710,16 @@ Performance:
     if not scanner.check_grype_installation():
         sys.exit(1)
     
-    # Parse source input - handle both new and legacy formats
+    # Parse source input
     try:
-        legacy_images, image_pairs = scanner.parse_source_input(args.source)
+        image_pairs = scanner.parse_source_input(args.source)
         
         if image_pairs:
-            # New two-column format - use parallel scanning
-            logger.info(f"Using two-column format with {len(image_pairs)} image pairs")
+            # CSV format - use parallel scanning
+            logger.info(f"Using CSV format with {len(image_pairs)} image pairs")
             scan_results = scanner.scan_image_pairs_parallel(image_pairs, args.max_workers)
-        elif legacy_images:
-            # Legacy format - convert to pairs and scan
-            logger.info(f"Using legacy format with {len(legacy_images)} images")
-            legacy_pairs = []
-            for customer_image in legacy_images:
-                chainguard_image = scanner.find_chainguard_equivalent(customer_image)
-                legacy_pairs.append(ImagePair(chainguard_image, customer_image))
-            scan_results = scanner.scan_image_pairs_parallel(legacy_pairs, args.max_workers)
         else:
-            logger.error("No valid images found in source")
+            logger.error("No valid image pairs found in source")
             sys.exit(1)
             
     except Exception as e:

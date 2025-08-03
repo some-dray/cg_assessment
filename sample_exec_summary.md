@@ -4,7 +4,7 @@ This comprehensive vulnerability assessment demonstrates the challenges that {{c
 
 ### Key Findings
 
-- **Dramatic Vulnerability Reduction**: {{images_with_reduction}} of {{images_scanned}} images show measurable improvement with Chainguard alternatives
+- **Significant Vulnerability Reduction**: {{images_with_reduction}} of {{images_scanned}} images show measurable improvement with Chainguard alternatives
 - **Average Per-Image Improvement**: {{average_reduction_per_image}} average CVE reduction per improved image
 - **Total Impact**: {{total_customer_vulns}} vulnerabilities in current images reduced to {{total_chainguard_vulns}} with Chainguard
 - **Reduced Attack Surface**: Distroless and minimal base images eliminate unnecessary components

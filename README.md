@@ -10,7 +10,7 @@ A Python tool that demonstrates Chainguard's value proposition by scanning conta
 - **Executive Summary**: Supports custom markdown executive summaries with template variables
 - **Custom Appendix**: Add organization-specific content to reports with `-a` flag
 - **Progress Tracking**: Provides detailed scan progress and error reporting
-- **Flexible Input**: Accepts single images, comma-separated lists, or file inputs
+- **Flexible Input**: Accepts CSV file inputs
 - **PDF-Optimized Styling**: Clean layout designed for professional PDF conversion
 
 ## Requirements
@@ -37,9 +37,7 @@ A Python tool that demonstrates Chainguard's value proposition by scanning conta
 
 ## Usage
 
-### Two-Column Format (Recommended)
-
-The tool supports both CSV and whitespace-separated two-column formats with **parallel scanning** for improved performance:
+The tool supports CSV format with **parallel scanning** for improved performance:
 
 ```bash
 # CSV format (best performance with parallel scanning)
@@ -54,8 +52,6 @@ python3 cve_scanner.py -s sample.csv -o report.html -c "Sameple Customer"
 # Complete example with all options
 python3 cve_scanner.py -s sample.csv -o sample_customer.html -e sample_exec_summary.md -a appendix.md -c "sample_customer" --max-workers 2
 
-# Whitespace-separated format
-python3 cve_scanner.py -s sample_image_pairs.txt -o report.html
 ```
 
 **CSV Format (Recommended):**
@@ -66,42 +62,12 @@ cgr.dev/chainguard-private/nginx:1,hijaak/nginx:v1
 cgr.dev/chainguard-private/logstash:7,logstash:7.17.0
 ```
 
-**Whitespace-Separated Format:**
-```
-# Chainguard vs Customer Image Pairs  
-# Format: Chainguard_Image    Customer_Image
-cgr.dev/chainguard-private/jdk:openjdk-21    alpine/java:21
-cgr.dev/chainguard-private/nginx:1    hijaak/nginx:v1
-cgr.dev/chainguard-private/logstash:7    logstash:7.17.0
-```
 
-### Legacy Usage (Still Supported)
-
-```bash
-# Scan a single image (legacy)
-python3 cve_scanner.py -s nginx:latest -o report.html
-
-# Scan multiple images (legacy)
-python3 cve_scanner.py -s "nginx:latest,python:3.9,node:16" -o report.html
-
-# Scan images from single-column file (legacy)
-python3 cve_scanner.py -s sample_images.txt -o report.html
-
-# Include executive summary
-python3 cve_scanner.py -s nginx:latest -o report.html -e sample_exec_summary.md
-
-# With customer name
-python3 cve_scanner.py -s nginx:latest -o report.html -c "YourCompany"
-```
 
 ### Command Line Options
 
 - `-s, --source`: Source images (required)
-  - **CSV file**: `image_pairs.csv` (recommended for performance)
-  - **Two-column file**: `image_pairs.txt` (whitespace-separated)
-  - Single image: `nginx:latest`
-  - Multiple images: `"nginx:latest,python:3.9"`
-  - Single-column file: `images.txt`
+  - **CSV file**: `image_pairs.csv`
 - `-o, --output`: Output HTML file path (required)
 - `-e, --exec-summary`: Optional markdown file for executive summary
 - `-a, --appendix`: Optional markdown file for custom appendix content (appears above methodology)
@@ -109,9 +75,9 @@ python3 cve_scanner.py -s nginx:latest -o report.html -c "YourCompany"
 - `--max-workers`: Number of parallel scanning threads (default: 4)
 - `--timeout-per-image`: Timeout in seconds per image scan (default: 300)
 
-### File Formats
+### File Format
 
-**CSV Format (Best Performance):**
+**CSV Format:**
 ```csv
 Chainguard_Image,Customer_Image
 cgr.dev/chainguard/nginx:latest,nginx:latest
@@ -119,29 +85,11 @@ cgr.dev/chainguard/python:latest,python:3.9
 cgr.dev/chainguard/node:latest,node:16-alpine
 ```
 
-**Whitespace-Separated Format:**
-```
-# Chainguard_Image    Customer_Image
-cgr.dev/chainguard/nginx:latest    nginx:latest
-cgr.dev/chainguard/python:latest   python:3.9
-cgr.dev/chainguard/node:latest     node:16-alpine
-```
 
-**Legacy Single-Column Format:**
-```
-# Sample container images
-nginx:latest
-python:3.9
-node:16-alpine
-redis:7
-postgres:14
-```
 
 ## Sample Files
 
-- `sample_image_pairs.csv`: Example CSV format file (best performance)
-- `sample_image_pairs.txt`: Example whitespace-separated format file  
-- `sample_images.txt`: Example single-column format file (legacy)
+- `sample_image_pairs.csv`: Example CSV format file
 - `sample_exec_summary.md`: Example executive summary with template variables
 - `sample_appendix.md`: Comprehensive appendix with methodology and best practices
 
@@ -256,17 +204,6 @@ The tool automatically calculates and displays:
 - **Impact summary**: Visual breakdown of total vulnerabilities before/after
 - **Success rate**: How many images benefited from Chainguard alternatives
 
-## Chainguard Image Mapping
-
-The tool automatically maps common images to Chainguard alternatives:
-
-- `nginx` → `cgr.dev/chainguard/nginx`
-- `python` → `cgr.dev/chainguard/python`
-- `node` → `cgr.dev/chainguard/node`
-- `alpine` → `cgr.dev/chainguard/alpine-base`
-- `redis` → `cgr.dev/chainguard/redis`
-- `postgres` → `cgr.dev/chainguard/postgres`
-- And more...
 
 ## Customer Objectives
 
