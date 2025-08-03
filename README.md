@@ -41,16 +41,16 @@ The tool supports CSV format with **parallel scanning** for improved performance
 
 ```bash
 # CSV format (best performance with parallel scanning)
-python3 cve_scanner.py -s sample.csv -o report.html -e sample_exec_summary.md --max-workers 8
+python3 cve_scanner.py -s sample.csv -o report.html -e sample-exec-summary.md --max-workers 8
 
 # With custom appendix
-python3 cve_scanner.py -s sample.csv -o report.html -e sample_exec_summary.md -a custom_appendix.md
+python3 cve_scanner.py -s sample.csv -o report.html -e sample-exec-summary.md -a sample-appendix.md
 
 # With customer name for branding
-python3 cve_scanner.py -s sample.csv -o report.html -c "Sameple Customer"
+python3 cve_scanner.py -s sample.csv -o report.html -c "Sample Customer"
 
 # Complete example with all options
-python3 cve_scanner.py -s sample.csv -o sample_customer.html -e sample_exec_summary.md -a appendix.md -c "sample_customer" --max-workers 2
+python3 cve_scanner.py -s sample.csv -o sample-customer.html -e sample-exec-summary.md -a sample-appendix.md -c "Sample Customer" --max-workers 2
 
 ```
 
@@ -89,9 +89,9 @@ cgr.dev/chainguard/node:latest,node:16-alpine
 
 ## Sample Files
 
-- `sample_image_pairs.csv`: Example CSV format file
-- `sample_exec_summary.md`: Example executive summary with template variables
-- `sample_appendix.md`: Comprehensive appendix with methodology and best practices
+- `sample.csv`: Example CSV format file with image pairs
+- `sample-exec-summary.md`: Example executive summary with template variables
+- `sample-appendix.md`: Comprehensive appendix with methodology and best practices
 
 ## Performance Features
 
@@ -137,7 +137,7 @@ The HTML reports are specifically optimized for PDF conversion:
 Use the `-a` flag to add organization-specific content to your reports:
 
 ```bash
-python3 cve_scanner.py -s images.csv -o report.html -a custom_appendix.md
+python3 cve_scanner.py -s sample.csv -o report.html -a sample-appendix.md
 ```
 
 The appendix structure will be:
@@ -152,7 +152,7 @@ The appendix structure will be:
 Use the `-c` flag to customize the report footer with your organization's name for professional branding:
 
 ```bash
-python3 cve_scanner.py -s images.csv -o report.html -c "Your Organization"
+python3 cve_scanner.py -s sample.csv -o report.html -c "Your Organization"
 ```
 
 This will generate a footer that reads: `"This report is Your Organization & Chainguard Confidential | Generated on [timestamp]"`

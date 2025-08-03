@@ -322,22 +322,28 @@ code {
 
 /* Severity indicator colors */
 .severity-indicator.critical { 
-    background: #dc2626;
+    background: #f2e4f8;
+    border: 1px solid #c08ad5;
 }
 .severity-indicator.high { 
-    background: #ea580c;
+    background: #fbe7e8;
+    border: 1px solid #ee7f78;
 }
 .severity-indicator.medium { 
-    background: #d97706;
+    background: #fcebcc;
+    border: 1px solid #f3ad56;
 }
 .severity-indicator.low { 
-    background: var(--cg-secondary);
+    background: #fefad3;
+    border: 1px solid #f7d959;
 }
 .severity-indicator.negligible { 
-    background: var(--cg-gray-dark);
+    background: #e8ecef;
+    border: 1px solid #b8c2ca;
 }
 .severity-indicator.unknown { 
-    background: #9ca3af;
+    background: #fafbfb;
+    border: 1px solid #8b8d8f;
 }
 
 /* Enhanced sections */
@@ -466,6 +472,27 @@ code {
     line-height: 1.5;
 }
 
+/* Force Images Scanned section to start on new page */
+.images-scanned-section {
+    page-break-before: always !important;
+    break-before: always !important;
+}
+
+/* Specific column alignments for Images Scanned table */
+.image-table-container th:nth-child(1),
+.image-table-container td:nth-child(1),
+.image-table-container th:nth-child(3),
+.image-table-container td:nth-child(3) {
+    text-align: left;
+}
+
+.image-table-container th:nth-child(2),
+.image-table-container td:nth-child(2),
+.image-table-container th:nth-child(4),
+.image-table-container td:nth-child(4) {
+    text-align: center;
+}
+
 .image-table-container thead th {
     background: var(--cg-primary);
     color: var(--cg-white);
@@ -565,39 +592,39 @@ code {
 
 /* Severity-specific badge colors */
 .vuln-critical {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border-color: #b91c1c;
+    background-color: #f2e4f8;
+    color: #82349d;
+    border-color: #c08ad5;
 }
 
 .vuln-high {
-    background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
-    color: white;
-    border-color: #dc2626;
+    background-color: #fbe7e8;
+    color: #98362e;
+    border-color: #ee7f78;
 }
 
 .vuln-medium {
-    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-    color: white;
-    border-color: #c2410c;
+    background-color: #fcebcc;
+    color: #a1531e;
+    border-color: #f3ad56;
 }
 
 .vuln-low {
-    background: linear-gradient(135deg, var(--cg-secondary) 0%, #1e40af 100%);
-    color: white;
-    border-color: #2563eb;
+    background-color: #fefad3;
+    color: #76651d;
+    border-color: #f7d959;
 }
 
 .vuln-negligible {
-    background: linear-gradient(135deg, var(--cg-gray-dark) 0%, #4b5563 100%);
-    color: white;
-    border-color: #6b7280;
+    background-color: #e8ecef;
+    color: #4d5b6a;
+    border-color: #b8c2ca;
 }
 
 .vuln-unknown {
-    background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
-    color: white;
-    border-color: #9ca3af;
+    background-color: #fafbfb;
+    color: #4d5b6a;
+    border-color: #8b8d8f;
 }
 
 .vuln-clean {
@@ -1012,7 +1039,7 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
         </div>
 
         <!-- Image Comparison Table -->
-        <div class="image-comparison-section">
+        <div class="image-comparison-section images-scanned-section">
             <h2>Images Scanned</h2>
             <div class="image-table-container">
                 <table>
@@ -1128,7 +1155,7 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
             
             <!-- Footer integrated within appendix container -->
             <div class="footer">
-                <p>This report is Sample_Customer & Chainguard Confidential | Generated on 2025-08-03 15:57:01</p>
+                <p>This report is Sample_Customer & Chainguard Confidential | Generated on 2025-08-03 16:05:36</p>
             </div>
         </div>
     </div>
