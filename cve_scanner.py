@@ -521,8 +521,9 @@ class CVEScanner:
         </div>
 
         <!-- Image Comparison Table -->
-        <div class="image-comparison-section images-scanned-section">
+        <div class="images-scanned-section">
             <h2>Images Scanned</h2>
+            {self._generate_vulnerability_legend()}
             <div class="image-table-container">
                 <table>
                     <thead>
@@ -635,11 +636,26 @@ class CVEScanner:
         return vuln_data.image_name
     
     def _format_vulnerability_breakdown(self, vuln_data: VulnerabilityData) -> str:
-        """Format vulnerability count as simple total number"""
+        """Format vulnerability count with small severity breakdown badges"""
         if not vuln_data.scan_successful:
-            return "-"
+            return '<span class="breakdown-error">Scan Failed</span>'
         
-        return str(vuln_data.total_vulnerabilities)
+        if vuln_data.total_vulnerabilities == 0:
+            return '<div class="vuln-breakdown-container"><span class="vuln-badge vuln-clean">Clean</span></div>'
+        
+        # Create small badges for each severity with count > 0
+        badges = []
+        
+        for severity in self.SEVERITY_ORDER:
+            count = vuln_data.severity_breakdown.get(severity, 0)
+            if count > 0:
+                severity_class = severity.lower()
+                badges.append(f'<span class="vuln-badge vuln-{severity_class}">{count}</span>')
+        
+        if not badges:
+            return '<div class="vuln-breakdown-container"><span class="vuln-badge vuln-clean">Clean</span></div>'
+        
+        return f'<div class="vuln-breakdown-container">{"".join(badges)}</div>'
     
     def calculate_cve_reduction_metrics(self, scan_results: List[ScanResult]) -> Dict:
         """Calculate CVE reduction metrics from scan results"""
@@ -695,6 +711,45 @@ class CVEScanner:
         """Generate HTML section for failed scans - now returns empty string"""
         # Failed scans are now only reported in CLI output, not in HTML
         return ""
+    
+    def _generate_vulnerability_legend(self) -> str:
+        """Generate HTML for vulnerability severity color legend"""
+        return """
+            <div class="vulnerability-legend">
+                <h3>Vulnerability Severity Legend</h3>
+                <div class="legend-items">
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-critical legend-badge">C</span>
+                        <span class="legend-label">Critical</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-high legend-badge">H</span>
+                        <span class="legend-label">High</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-medium legend-badge">M</span>
+                        <span class="legend-label">Medium</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-low legend-badge">L</span>
+                        <span class="legend-label">Low</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-negligible legend-badge">N</span>
+                        <span class="legend-label">Negligible</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-unknown legend-badge">U</span>
+                        <span class="legend-label">Unknown</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="vuln-badge vuln-clean legend-badge">Clean</span>
+                        <span class="legend-label">No Vulnerabilities</span>
+                    </div>
+                </div>
+            </div>
+        """
+    
     
     def load_appendix(self, appendix_file: Optional[str], metrics: Dict = None, customer_name: Optional[str] = None) -> str:
         """Load and convert markdown appendix to HTML with data interpolation"""
@@ -842,8 +897,24 @@ class CVEScanner:
     
     /* Enhanced badge visibility in PDF */
     .vuln-badge {
-        border: 2px solid currentColor;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        border: 1px solid currentColor !important;
+        box-shadow: none !important;
+        font-size: 8px !important;
+        padding: 1px 3px !important;
+        min-width: 18px !important;
+    }
+    
+    .vuln-breakdown-container {
+        gap: 1px !important;
+        padding: 2px !important;
+    }
+    
+    .vuln-code {
+        font-size: 7px !important;
+    }
+    
+    .vuln-count {
+        font-size: 8px !important;
     }
     
     
@@ -1099,30 +1170,36 @@ code {
     vertical-align: middle;
 }
 
-/* Severity indicator colors */
+/* Severity indicator colors with new color scheme */
 .severity-indicator.critical { 
     background: #f2e4f8;
+    color: #82349d;
     border: 1px solid #c08ad5;
 }
 .severity-indicator.high { 
     background: #fbe7e8;
+    color: #98362e;
     border: 1px solid #ee7f78;
 }
 .severity-indicator.medium { 
     background: #fcebcc;
+    color: #a1531e;
     border: 1px solid #f3ad56;
 }
 .severity-indicator.low { 
     background: #fefad3;
+    color: #76651d;
     border: 1px solid #f7d959;
 }
 .severity-indicator.negligible { 
     background: #e8ecef;
+    color: #4d5b6a;
     border: 1px solid #b8c2ca;
 }
 .severity-indicator.unknown { 
-    background: #fafbfb;
-    border: 1px solid #8b8d8f;
+    background: #ffffff;
+    color: #4d5b6a;
+    border: 1px solid #b8c2ca;
 }
 
 /* Enhanced sections */
@@ -1136,6 +1213,19 @@ code {
     box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
     page-break-inside: avoid;
     page-break-before: avoid;
+}
+
+/* Add page break before Images Scanned section */
+.images-scanned-section {
+    margin-top: 40px;
+    margin-bottom: 40px;
+    padding: 20px;
+    border: 2px solid var(--cg-light);
+    background: var(--cg-white);
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
+    page-break-inside: avoid;
+    page-break-before: always;
 }
 
 .image-comparison-section h2 {
@@ -1241,7 +1331,7 @@ code {
 .image-table-container td {
     padding: 16px 12px;
     border-bottom: 1px solid var(--cg-gray-medium);
-    text-align: center;
+    text-align: left;
     font-size: 12px;
     vertical-align: middle;
     word-wrap: break-word;
@@ -1249,27 +1339,6 @@ code {
     page-break-inside: avoid;
     break-inside: avoid;
     line-height: 1.5;
-}
-
-/* Force Images Scanned section to start on new page */
-.images-scanned-section {
-    page-break-before: always !important;
-    break-before: always !important;
-}
-
-/* Specific column alignments for Images Scanned table */
-.image-table-container th:nth-child(1),
-.image-table-container td:nth-child(1),
-.image-table-container th:nth-child(3),
-.image-table-container td:nth-child(3) {
-    text-align: left;
-}
-
-.image-table-container th:nth-child(2),
-.image-table-container td:nth-child(2),
-.image-table-container th:nth-child(4),
-.image-table-container td:nth-child(4) {
-    text-align: center;
 }
 
 .image-table-container thead th {
@@ -1326,7 +1395,7 @@ code {
     font-weight: 700;
     font-size: 14px;
     color: var(--cg-primary);
-    text-align: center;
+    text-align: left;
 }
 
 .no-match {
@@ -1335,75 +1404,80 @@ code {
     font-weight: 500;
 }
 
-/* Enhanced vulnerability breakdown styling */
+/* Enhanced vulnerability breakdown styling for table cells */
 .vuln-breakdown-container {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    justify-content: center;
+    gap: 2px;
+    justify-content: flex-start;
     align-items: center;
-    padding: 2px;
+    padding: 4px 2px;
+    line-height: 1.2;
 }
 
 .vuln-badge {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    padding: 3px 6px;
-    border-radius: 12px;
-    font-size: 10px;
+    gap: 1px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 9px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border: 1px solid transparent;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    letter-spacing: 0.3px;
+    border: 1px solid;
+    white-space: nowrap;
+    min-width: 20px;
+    justify-content: center;
 }
 
 .vuln-code {
     font-weight: 700;
     opacity: 0.9;
+    font-size: 8px;
 }
 
 .vuln-count {
     font-weight: 800;
-    font-size: 11px;
+    font-size: 9px;
+    margin-left: 1px;
 }
 
-/* Severity-specific badge colors */
+/* Severity-specific badge colors with new color scheme */
 .vuln-critical {
-    background-color: #f2e4f8;
+    background: #f2e4f8;
     color: #82349d;
     border-color: #c08ad5;
 }
 
 .vuln-high {
-    background-color: #fbe7e8;
+    background: #fbe7e8;
     color: #98362e;
     border-color: #ee7f78;
 }
 
 .vuln-medium {
-    background-color: #fcebcc;
+    background: #fcebcc;
     color: #a1531e;
     border-color: #f3ad56;
 }
 
 .vuln-low {
-    background-color: #fefad3;
+    background: #fefad3;
     color: #76651d;
     border-color: #f7d959;
 }
 
 .vuln-negligible {
-    background-color: #e8ecef;
+    background: #e8ecef;
     color: #4d5b6a;
     border-color: #b8c2ca;
 }
 
 .vuln-unknown {
-    background-color: #fafbfb;
+    background: #ffffff;
     color: #4d5b6a;
-    border-color: #8b8d8f;
+    border-color: #b8c2ca;
 }
 
 .vuln-clean {
@@ -1686,7 +1760,79 @@ em {
     letter-spacing: 0.05em;
     font-weight: 500;
     color: var(--cg-gray-dark);
-}"""
+}
+
+/* Vulnerability legend styling */
+.vulnerability-legend {
+    margin: 20px 0 30px 0;
+    padding: 16px 20px;
+    background: var(--cg-gray-light);
+    border: 2px solid var(--cg-light);
+    border-radius: 8px;
+    page-break-inside: avoid;
+}
+
+.vulnerability-legend h3 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--cg-primary);
+    border: none;
+    padding: 0;
+    text-align: left;
+}
+
+.legend-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.legend-badge {
+    transform: scale(1.1);
+}
+
+.legend-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--cg-primary);
+}
+
+@media print {
+    .vulnerability-legend {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        margin: 15px 0 20px 0;
+        padding: 12px 16px;
+    }
+    
+    .legend-items {
+        gap: 12px;
+    }
+    
+    .legend-item {
+        gap: 4px;
+    }
+    
+    .legend-badge {
+        transform: scale(1.0);
+    }
+    
+    .legend-label {
+        font-size: 11px;
+    }
+}
+
+"""
     
     def _get_current_datetime(self) -> str:
         """Get current datetime formatted string"""
