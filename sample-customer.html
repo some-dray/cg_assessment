@@ -921,7 +921,7 @@ em {
         <!-- Executive Summary -->
         <div class="image-comparison-section no-break">
             <h2>Executive Summary</h2>
-            <p><h3>Security Vulnerability Assessment for Sample_Customer</h3></p><p>This comprehensive vulnerability assessment demonstrates the challenges that Sample_Customer face in managing CVE's at scale. Sample_Customer is not alone in this challenge as many in the industry are grappling with CVE spawl & controls around OSS. This report shows the significant security advantages of migrating from standard container images to <strong>Chainguard's hardened alternatives</strong>. Analysis of 3 container image pairs reveals a <strong>99.7% overall CVE reduction</strong>, eliminating 1056 vulnerabilities across your infrastructure.</p><p><h3>Key Findings</h3></p><ul><li><strong>Significant Vulnerability Reduction</strong>: 3 of 3 images show measurable improvement with Chainguard alternatives</li>
+            <p><h3>Security Vulnerability Assessment for Sample-Customer</h3></p><p>This comprehensive vulnerability assessment demonstrates the challenges that Sample-Customer face in managing CVE's at scale. Sample-Customer is not alone in this challenge as many in the industry are grappling with CVE spawl & controls around OSS. This report shows the significant security advantages of migrating from standard container images to <strong>Chainguard's hardened alternatives</strong>. Analysis of 3 container image pairs reveals a <strong>99.7% overall CVE reduction</strong>, eliminating 1056 vulnerabilities across your infrastructure.</p><p><h3>Key Findings</h3></p><ul><li><strong>Significant Vulnerability Reduction</strong>: 3 of 3 images show measurable improvement with Chainguard alternatives</li>
 <li><strong>Average Per-Image Improvement</strong>: 98.4% average CVE reduction per improved image</li>
 <li><strong>Total Impact</strong>: 1059 vulnerabilities in current images reduced to 3 with Chainguard</li>
 <li><strong>Reduced Attack Surface</strong>: Distroless and minimal base images eliminate unnecessary components</li>
@@ -1110,7 +1110,13 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
         <!-- Appendix Section -->
         <div class="appendix-content">
             <h2>Appendix</h2>
-            <div>
+            <div><p><h3>Sample-Customer Specific Logic/Assumptions</h3></p><p><ul><li>Sample-Customer provided <strong>3 images</strong></li>
+<li>If the upstream software was EOL we mapped to :latest in Chainguard image</li>
+<li>Grype is leveraged as the scanner tool to scan both the Sample-Customer provided image as well as the Chainguard image</li>
+<li>If a scan with grype failed on any image, it attempted a tag for re-scanning which is represented with a *</li>
+<li>If the above logic fails, the entire row will fail and is not included in the report. This is to ensure 1:1 comparison. Eg: some Customer images are behind a paywall or simply not available in the public registry</li>
+<li>CVE cost figure based on: Average 1hr to resolve a single CVE (including business process). An engineer wage of $75 per hour multiplied by # of CVE's</li></ul>
+</p>
                 <div class="appendix-section">
                     <h3>Methodology</h3>
                     <p>This report was generated using the following methodology:</p>
@@ -1155,7 +1161,7 @@ The equates to a cost of over <strong>$2.7m</strong> based on average wage/engin
             
             <!-- Footer integrated within appendix container -->
             <div class="footer">
-                <p>This report is Sample_Customer & Chainguard Confidential | Generated on 2025-08-03 16:05:36</p>
+                <p>This report is Sample-Customer & Chainguard Confidential | Generated on 2025-08-03 16:10:13</p>
             </div>
         </div>
     </div>
