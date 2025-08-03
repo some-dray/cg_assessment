@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chainguard Vulnerability Report</title>
+    <style>
+/* PDF-optimized styles with Chainguard branding */
+@page {
+    margin: 0.75in;
+    size: A4;
+}
+
+@page appendix {
+    margin: 0.75in 0.75in 0.75in 0.75in;
+    size: A4;
+    @top-center {
+        content: "Appendix";
+        font-size: 16px;
+        font-weight: 600;
+        color: #14003d;
+        border-bottom: 2px solid #7545fb;
+        padding-bottom: 8px;
+        margin-bottom: 20px;
+    }
+}
+
+@media print {
+    body { -webkit-print-color-adjust: exact; color-adjust: exact; }
+    .navbar { display: none; }
+    .container { padding-top: 0; }
+    
+    /* Enhanced table page breaking for new structure */
+    .image-table-container {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        box-shadow: 0 4px 8px rgba(20, 0, 61, 0.15);
+    }
+    
+    .image-table-container table {
+        page-break-inside: auto;
+        border: 2px solid var(--cg-primary);
+    }
+    
+    .image-table-container thead {
+        display: table-header-group;
+        page-break-after: avoid;
+    }
+    
+    .image-table-container thead th {
+        border-bottom: 3px solid var(--cg-primary);
+    }
+    
+    .image-comparison-row {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        page-break-after: auto;
+    }
+    
+    .image-table-container tbody td {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    
+    /* Enhanced badge visibility in PDF */
+    .vuln-badge {
+        border: 2px solid currentColor;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    
+    /* Prevent orphaned text */
+    p, li {
+        orphans: 3;
+        widows: 3;
+    }
+    
+    /* Improve severity table for PDF */
+    .summary-table {
+        page-break-inside: avoid;
+    }
+    
+    .severity-count {
+        font-size: 12px;
+        font-weight: 700;
+    }
+    
+    .severity-indicator {
+        width: 10px;
+        height: 10px;
+    }
+}
+
+/* Chainguard Brand Colors */
+:root {
+    --cg-primary: #14003d;        /* Deep purple - primary text/backgrounds */
+    --cg-secondary: #3443f4;      /* Bright blue - secondary elements */
+    --cg-accent: #7545fb;         /* Purple accent - highlights */
+    --cg-success: #7af0fe;        /* Light cyan - success/positive */
+    --cg-light: #d0cfee;          /* Light purple - subtle backgrounds */
+    --cg-white: #ffffff;
+    --cg-black: #000000;
+    --cg-gray-light: #f8f9fc;
+    --cg-gray-medium: #e5e7f0;
+    --cg-gray-dark: #6b7280;
+}
+
+/* Base styles */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: var(--cg-white);
+    color: var(--cg-primary);
+    margin: 0;
+    padding: 24px;
+    line-height: 1.6;
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.container {
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Typography */
+h1 {
+    color: var(--cg-white);
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 8px 0;
+    text-align: center;
+    letter-spacing: -0.025em;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+h2 {
+    color: var(--cg-primary);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 32px 0 20px 0;
+    text-align: left;
+    border-bottom: 3px solid var(--cg-accent);
+    padding-bottom: 8px;
+    letter-spacing: -0.015em;
+}
+
+h3 {
+    color: var(--cg-primary);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 24px 0 12px 0;
+    border-bottom: 1px solid var(--cg-light);
+    padding-bottom: 6px;
+}
+
+p {
+    margin: 12px 0;
+    line-height: 1.7;
+    color: var(--cg-primary);
+}
+
+/* Code styling */
+code {
+    background-color: var(--cg-gray-light);
+    color: var(--cg-secondary);
+    padding: 3px 6px;
+    border: 1px solid var(--cg-light);
+    border-radius: 4px;
+    font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", "Courier New", monospace;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* Layout sections */
+.header-section {
+    text-align: center;
+    margin-bottom: 0;
+    border-bottom: 4px solid var(--cg-accent);
+    padding: 20px 32px 20px 32px;
+    background: #14003d;
+    border-radius: 12px;
+    box-shadow: 0 8px 16px -2px rgba(20, 0, 61, 0.15);
+    position: relative;
+    color: var(--cg-white);
+}
+
+.header-logo {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 60px;
+    height: auto;
+    max-height: 45px;
+}
+
+.header-section p {
+    font-size: 14px;
+    color: var(--cg-light);
+    margin-top: 8px;
+    font-weight: 400;
+    opacity: 0.95;
+}
+
+.overview-grid {
+    display: table;
+    width: 100%;
+    margin-bottom: 40px;
+    border-spacing: 20px;
+    table-layout: fixed;
+}
+
+.summary-column {
+    display: table-cell;
+    width: 50%;
+    vertical-align: top;
+    padding: 0;
+}
+
+.summary-column-content {
+    background: var(--cg-white);
+    border: 2px solid var(--cg-light);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
+    min-height: 400px;
+}
+
+.summary-column h2 {
+    text-align: center;
+    font-size: 18px;
+    margin-bottom: 24px;
+    color: var(--cg-primary);
+}
+
+/* Total boxes with enhanced Chainguard styling */
+.total-box {
+    padding: 24px;
+    border: 2px solid var(--cg-light);
+    text-align: center;
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    background: var(--cg-white);
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
+    flex-shrink: 0;
+}
+
+.total-box span {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    margin-top: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.customer-total {
+    background: linear-gradient(135deg, #f8f9fc 0%, #e5e7f0 100%);
+    border-color: #d0cfee;
+    color: #14003d;
+}
+
+.chainguard-total {
+    background: linear-gradient(135deg, #7af0fe 0%, #a7f3d0 100%);
+    border-color: #7af0fe;
+    color: var(--cg-primary);
+}
+
+.reduction-box {
+    background: linear-gradient(135deg, var(--cg-success) 0%, #a7f3d0 100%);
+    border-color: #7af0fe;
+    color: var(--cg-primary);
+    font-size: 40px;
+}
+
+/* Summary table styling */
+.summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(20, 0, 61, 0.08);
+}
+
+.summary-table th,
+.summary-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--cg-light);
+    font-size: 13px;
+}
+
+.summary-table th {
+    background: var(--cg-primary);
+    color: var(--cg-white);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 11px;
+}
+
+.summary-table tbody tr:nth-child(even) {
+    background-color: var(--cg-gray-light);
+}
+
+.severity-count {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--cg-primary);
+}
+
+.severity-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+/* Severity indicator colors */
+.severity-indicator.critical { 
+    background: #dc2626;
+}
+.severity-indicator.high { 
+    background: #ea580c;
+}
+.severity-indicator.medium { 
+    background: #d97706;
+}
+.severity-indicator.low { 
+    background: var(--cg-secondary);
+}
+.severity-indicator.negligible { 
+    background: var(--cg-gray-dark);
+}
+.severity-indicator.unknown { 
+    background: #9ca3af;
+}
+
+/* Enhanced sections */
+.image-comparison-section {
+    margin-top: 40px;
+    margin-bottom: 40px;
+    padding: 20px;
+    border: 2px solid var(--cg-light);
+    background: var(--cg-white);
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
+    page-break-inside: avoid;
+    page-break-before: avoid;
+}
+
+.image-comparison-section h2 {
+    margin-top: 0;
+    color: var(--cg-primary);
+    page-break-after: avoid;
+}
+
+/* Make first section directly adjacent to header */
+.header-section + .image-comparison-section {
+    margin-top: 0 !important;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
+}
+
+
+/* CVE Reduction Analysis */
+.overview-grid .summary-column h3 {
+    text-align: center;
+    margin-bottom: 24px;
+    font-size: 16px;
+    color: var(--cg-primary);
+}
+
+.reduction-stats {
+    display: table;
+    width: 100%;
+    margin: 24px 0;
+    border-spacing: 8px;
+    height: 120px;
+}
+
+.reduction-stat {
+    display: table-cell;
+    text-align: center;
+    padding: 24px 16px;
+    background: var(--cg-gray-light);
+    border: 2px solid var(--cg-light);
+    border-radius: 8px;
+    width: 50%;
+    vertical-align: middle;
+    height: 120px;
+    box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
+}
+
+.single-reduction-stat {
+    text-align: center;
+    padding: 24px;
+    background: var(--cg-gray-light);
+    border: 2px solid var(--cg-light);
+    border-radius: 8px;
+    margin-bottom: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
+    flex-shrink: 0;
+}
+
+.reduction-stat-value {
+    font-size: 40px;
+    font-weight: 700;
+    color: var(--cg-primary);
+    display: block;
+    margin-bottom: 8px;
+    line-height: 1;
+}
+
+.reduction-stat-label {
+    font-size: 13px;
+    color: var(--cg-gray-dark);
+    display: block;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+}
+
+/* Enhanced Professional table styling */
+.image-table-container {
+    width: 100%;
+    overflow: visible;
+    margin: 30px 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    border-radius: 12px;
+    box-shadow: 0 8px 16px -4px rgba(20, 0, 61, 0.12);
+    background: var(--cg-white);
+}
+
+.image-table-container table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    table-layout: fixed;
+    page-break-inside: auto;
+    border: 2px solid var(--cg-light);
+}
+
+.image-table-container th,
+.image-table-container td {
+    padding: 16px 12px;
+    border-bottom: 1px solid var(--cg-gray-medium);
+    text-align: center;
+    font-size: 12px;
+    vertical-align: middle;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    line-height: 1.5;
+}
+
+.image-table-container thead th {
+    background: var(--cg-primary);
+    color: var(--cg-white);
+    font-weight: 600;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    page-break-after: avoid;
+    border-bottom: 3px solid var(--cg-accent);
+}
+
+.image-table-container tbody tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    page-break-after: auto;
+    transition: background-color 0.2s ease;
+}
+
+.image-table-container tbody tr:nth-child(even) {
+    background-color: var(--cg-gray-light);
+}
+
+.image-table-container tbody tr:nth-child(odd) {
+    background-color: var(--cg-white);
+}
+
+.image-table-container tbody tr:hover {
+    background-color: rgba(116, 69, 251, 0.08);
+}
+
+/* Simplified table cell styling */
+.image-name {
+    font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", "Courier New", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cg-primary);
+    background: rgba(255, 255, 255, 0.8);
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--cg-light);
+}
+
+.image-name-cell {
+    width: 40%;
+}
+
+.breakdown-cell {
+    width: 10%;
+}
+
+.vulnerability-count {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--cg-primary);
+    text-align: center;
+}
+
+.no-match {
+    color: var(--cg-gray-dark);
+    font-style: italic;
+    font-weight: 500;
+}
+
+/* Enhanced vulnerability breakdown styling */
+.vuln-breakdown-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+    align-items: center;
+    padding: 2px;
+}
+
+.vuln-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 6px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: 1px solid transparent;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.vuln-code {
+    font-weight: 700;
+    opacity: 0.9;
+}
+
+.vuln-count {
+    font-weight: 800;
+    font-size: 11px;
+}
+
+/* Severity-specific badge colors */
+.vuln-critical {
+    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+    color: white;
+    border-color: #b91c1c;
+}
+
+.vuln-high {
+    background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+    color: white;
+    border-color: #dc2626;
+}
+
+.vuln-medium {
+    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+    color: white;
+    border-color: #c2410c;
+}
+
+.vuln-low {
+    background: linear-gradient(135deg, var(--cg-secondary) 0%, #1e40af 100%);
+    color: white;
+    border-color: #2563eb;
+}
+
+.vuln-negligible {
+    background: linear-gradient(135deg, var(--cg-gray-dark) 0%, #4b5563 100%);
+    color: white;
+    border-color: #6b7280;
+}
+
+.vuln-unknown {
+    background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+    color: white;
+    border-color: #9ca3af;
+}
+
+.vuln-clean {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border-color: #10b981;
+    font-weight: 700;
+}
+
+.breakdown-error {
+    color: var(--cg-gray-dark);
+    font-style: italic;
+    font-weight: 500;
+}
+
+/* Enhanced table legend styling */
+.table-legend {
+    margin: 20px 0;
+    padding: 20px;
+    background: linear-gradient(135deg, rgba(208, 207, 238, 0.2) 0%, rgba(229, 231, 240, 0.2) 100%);
+    border-radius: 12px;
+    border: 2px solid var(--cg-light);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.legend-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.legend-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--cg-primary);
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.legend-note {
+    margin: 0;
+    font-size: 12px;
+    color: var(--cg-gray-dark);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.legend-icon {
+    background: var(--cg-accent);
+    color: white;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.legend-badges, .legend-indicators {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.legend-badge {
+    transform: scale(0.9);
+}
+
+.legend-text {
+    font-size: 12px;
+    color: var(--cg-primary);
+    font-weight: 500;
+    margin-right: 16px;
+}
+
+/* Print optimization for legend */
+@media print {
+    .table-legend {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        border: 2px solid var(--cg-primary);
+        box-shadow: 0 2px 4px rgba(20, 0, 61, 0.1);
+    }
+    
+    .legend-badges, .legend-indicators {
+        gap: 8px;
+    }
+    
+    .legend-text {
+        margin-right: 12px;
+    }
+}
+
+/* Enhanced Appendix with better page break handling */
+.appendix-content {
+    text-align: left;
+    padding: 24px;
+    background: var(--cg-gray-light);
+    border-radius: 8px;
+    border: 2px solid var(--cg-light);
+    page-break-before: always;
+}
+
+.appendix-content h2 {
+    page-break-after: avoid;
+    margin-top: 0 !important;
+    margin-bottom: 20px;
+}
+
+.appendix-content h3 {
+    font-size: 16px;
+    margin-top: 28px;
+    color: var(--cg-primary);
+    border-bottom-color: var(--cg-accent);
+    page-break-after: avoid;
+    page-break-before: auto;
+}
+
+.appendix-content ul {
+    margin: 16px 0;
+    padding-left: 24px;
+    page-break-inside: auto;
+}
+
+.appendix-content li {
+    margin-bottom: 8px;
+    line-height: 1.6;
+    font-size: 12px;
+    color: var(--cg-primary);
+    page-break-inside: avoid;
+}
+
+.appendix-content p {
+    orphans: 2;
+    widows: 2;
+    page-break-inside: auto;
+}
+
+.appendix-content strong {
+    color: var(--cg-accent);
+    font-weight: 600;
+}
+
+/* Appendix section grouping for better page breaks */
+.appendix-section {
+    page-break-inside: avoid;
+    margin-bottom: 32px;
+}
+
+.appendix-section:last-child {
+    margin-bottom: 0;
+}
+
+@media print {
+    .appendix-content {
+        page-break-before: always;
+        break-before: always;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        page: appendix;
+        page-break-inside: auto;
+        break-inside: auto;
+    }
+    
+    .appendix-content h3 {
+        page-break-after: avoid;
+        break-after: avoid;
+        page-break-before: auto;
+        break-before: auto;
+    }
+    
+    .appendix-content ul {
+        page-break-inside: auto;
+        break-inside: auto;
+    }
+    
+    .appendix-content li {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        orphans: 2;
+        widows: 2;
+    }
+    
+    .appendix-content p {
+        orphans: 2;
+        widows: 2;
+        page-break-inside: auto;
+        break-inside: auto;
+    }
+    
+    .appendix-section {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    
+    /* Strategic page break with continuation header */
+    .appendix-page-break {
+        page-break-before: always;
+        break-before: always;
+        margin-top: 0;
+        padding-top: 0;
+    }
+    
+    .appendix-continuation {
+        color: var(--cg-primary);
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0 0 20px 0 !important;
+        text-align: left;
+        border-bottom: 3px solid var(--cg-accent);
+        padding-bottom: 8px;
+        letter-spacing: -0.015em;
+        page-break-after: avoid;
+    }
+    
+    /* Chrome PDF export specific footer behavior - now inside appendix */
+    .appendix-content .footer {
+        page-break-before: avoid;
+        break-before: avoid;
+        page-break-inside: avoid;
+        break-inside: avoid;
+        margin-top: 30px;
+        border-radius: 8px;
+        background: var(--cg-white);
+        border: 2px solid var(--cg-light);
+    }
+}
+
+/* Professional Footer */
+.footer {
+    text-align: center;
+    margin-top: 40px;
+    padding: 20px;
+    font-size: 11px;
+    color: var(--cg-gray-dark);
+    border-top: 2px solid var(--cg-light);
+    background: var(--cg-gray-light);
+    border-radius: 0 0 8px 8px;
+    font-weight: 500;
+    page-break-before: avoid;
+    page-break-inside: avoid;
+}
+
+/* Navbar - hidden in print */
+.navbar {
+    display: none;
+}
+
+/* Utility classes */
+.no-break {
+    page-break-inside: avoid;
+}
+
+/* Additional professional touches */
+strong {
+    color: var(--cg-primary);
+    font-weight: 600;
+}
+
+em {
+    color: var(--cg-accent);
+    font-style: normal;
+    font-weight: 500;
+}
+
+/* Small caps for labels */
+.label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+    color: var(--cg-gray-dark);
+}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-section">
+            <img class="header-logo" src="Linky_White.png" alt="Chainguard Logo">
+            <h1>Vulnerability Comparison Report</h1>
+            <p>A comprehensive analysis comparing vulnerabilities in your container images versus Chainguard's hardened alternatives.</p>
+        </div>
+
+        <!-- Executive Summary -->
+        <div class="image-comparison-section no-break">
+            <h2>Executive Summary</h2>
+            <p><h3>Security Vulnerability Assessment for Sample_Customer</h3></p><p>This comprehensive vulnerability assessment demonstrates the challenges that Sample_Customer face in managing CVE's at scale. Sample_Customer is not alone in this challenge as many in the industry are grappling with CVE spawl & controls around OSS. This report shows the significant security advantages of migrating from standard container images to <strong>Chainguard's hardened alternatives</strong>. Analysis of 3 container image pairs reveals a <strong>99.7% overall CVE reduction</strong>, eliminating 1056 vulnerabilities across your infrastructure.</p><p><h3>Key Findings</h3></p><ul><li><strong>Significant Vulnerability Reduction</strong>: 3 of 3 images show measurable improvement with Chainguard alternatives</li>
+<li><strong>Average Per-Image Improvement</strong>: 98.4% average CVE reduction per improved image</li>
+<li><strong>Total Impact</strong>: 1059 vulnerabilities in current images reduced to 3 with Chainguard</li>
+<li><strong>Reduced Attack Surface</strong>: Distroless and minimal base images eliminate unnecessary components</li>
+<li><strong>Faster Remediation</strong>: Streamlined images enable quicker security updates and patches</li></ul><p><h3>Business Impact</h3></p><p><strong>Overall Business Value</strong> A direct cost savings can be calculated as follows. 1-4hrs to resolve a CVE when you consider the research, business process/approvals and actual engineering effort. 
+The equates to a cost of over <strong>$2.7m</strong> based on average wage/engineering effort metrics.</p><ul><li><strong>Enhanced Security Posture</strong>: 99.7% reduction translates to significantly lower risk of a breach</li>
+<li><strong>Compliance Readiness</strong>: Fewer vulnerabilities mean easier security compliance achievement </li>
+<li><strong>Operational Efficiency</strong>: 1056 fewer CVEs to track, patch, and manage</li>
+<li><strong>Developer Productivity</strong>: Less time addressing security issues, more time on shipping value to the business</li></ul><p><h3>Recommendation</h3></p><p>With demonstrated <strong>99.7% CVE reduction</strong> across 3 analyzed images, we strongly recommend transitioning to Chainguard images as part of your DevSecOps strategy to mature security practices and reduce operational toil across platform, security, and development teams.
+</p>
+        </div>
+
+        <!-- CVE Reduction Metrics -->
+        <div class="image-comparison-section no-break">
+            <h2>CVE Reduction Analysis</h2>
+            <div style="text-align: center; margin-bottom: 30px;">
+                <div class="total-box reduction-box" style="display: block; margin: 0 auto 20px auto; width: 300px;">
+                    99.7%
+                    <span>CVE Reduction</span>
+                </div>
+                <p style="text-align: center; margin: 0; font-size: 16px; color: var(--cg-primary);"><strong>1056</strong> fewer vulnerabilities with Chainguard images</p>
+            </div>
+            
+            <!-- Overview Section within CVE Reduction Analysis -->
+            <div class="overview-grid" style="margin-top: 40px;">
+                <!-- Customer Images Column -->
+                <div class="summary-column">
+                    <div class="summary-column-content">
+                        <h2>Your Images</h2>
+                        <div class="total-box customer-total">
+                            1059
+                            <span>Total Vulnerabilities</span>
+                        </div>
+                        <table class="summary-table">
+                            <thead>
+                                <tr>
+                                    <th>Severity</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="severity-indicator critical"></span>Critical</td>
+                                    <td class="severity-count">15</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator high"></span>High</td>
+                                    <td class="severity-count">96</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator medium"></span>Medium</td>
+                                    <td class="severity-count">161</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator low"></span>Low</td>
+                                    <td class="severity-count">93</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator negligible"></span>Negligible</td>
+                                    <td class="severity-count">694</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator unknown"></span>Unknown</td>
+                                    <td class="severity-count">0</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Chainguard Images Column -->
+                <div class="summary-column">
+                    <div class="summary-column-content">
+                        <h2>Chainguard Images</h2>
+                        <div class="total-box chainguard-total">
+                            3
+                            <span>Total Vulnerabilities</span>
+                        </div>
+                        <table class="summary-table">
+                            <thead>
+                                <tr>
+                                    <th>Severity</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="severity-indicator critical"></span>Critical</td>
+                                    <td class="severity-count">0</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator high"></span>High</td>
+                                    <td class="severity-count">1</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator medium"></span>Medium</td>
+                                    <td class="severity-count">0</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator low"></span>Low</td>
+                                    <td class="severity-count">2</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator negligible"></span>Negligible</td>
+                                    <td class="severity-count">0</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="severity-indicator unknown"></span>Unknown</td>
+                                    <td class="severity-count">0</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Comparison Table -->
+        <div class="image-comparison-section">
+            <h2>Images Scanned</h2>
+            <div class="image-table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Your Image</th>
+                            <th>Total Vulnerabilities</th>
+                            <th>Chainguard Image</th>
+                            <th>Total Vulnerabilities</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                <tr class="image-comparison-row">
+                    <td class="image-name-cell">
+                        <code class="image-name">nginx:latest</code>
+                    </td>
+                    <td class="vulnerability-count">146</td>
+                    <td class="image-name-cell">
+                        <code class="image-name">cgr.dev/chainguard/nginx:latest</code>
+                    </td>
+                    <td class="vulnerability-count">
+                        0
+                    </td>
+                </tr>
+            
+                <tr class="image-comparison-row">
+                    <td class="image-name-cell">
+                        <code class="image-name">alpine/java:21</code>
+                    </td>
+                    <td class="vulnerability-count">43</td>
+                    <td class="image-name-cell">
+                        <code class="image-name">cgr.dev/chainguard/jdk:openjdk-21</code>
+                    </td>
+                    <td class="vulnerability-count">
+                        2
+                    </td>
+                </tr>
+            
+                <tr class="image-comparison-row">
+                    <td class="image-name-cell">
+                        <code class="image-name">python:latest</code>
+                    </td>
+                    <td class="vulnerability-count">870</td>
+                    <td class="image-name-cell">
+                        <code class="image-name">cgr.dev/chainguard/python:latest</code>
+                    </td>
+                    <td class="vulnerability-count">
+                        1
+                    </td>
+                </tr>
+            
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-legend">
+                <div class="legend-section">
+                    <p class="legend-note">
+                        <span class="legend-icon">*</span>
+                        Images marked with an asterisk were retried with the :latest tag after initial scan failure.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        
+        
+        <!-- Appendix Section -->
+        <div class="appendix-content">
+            <h2>Appendix</h2>
+            <div>
+                <div class="appendix-section">
+                    <h3>Methodology</h3>
+                    <p>This report was generated using the following methodology:</p>
+                    <ul>
+                        <li><strong>Scanning Tool:</strong> Grype vulnerability scanner</li>
+                        <li><strong>Data Sources:</strong> National Vulnerability Database (NVD) and other security databases</li>
+                        <li><strong>Image Analysis:</strong> Container images were scanned for known vulnerabilities</li>
+                        <li><strong>Comparison:</strong> Customer images compared against Chainguard hardened alternatives</li>
+                    </ul>
+                </div>
+                
+                <!-- Strategic page break marker with continuation header -->
+                <div class="appendix-page-break">
+                    <h2 class="appendix-continuation">Appendix (continued)</h2>
+                </div>
+                
+                <div class="appendix-section">
+                    <h3>Severity Levels</h3>
+                    <p>Vulnerabilities are classified using the following severity levels:</p>
+                    <ul>
+                        <li><strong>Critical:</strong> Vulnerabilities with CVSS scores of 9.0-10.0</li>
+                        <li><strong>High:</strong> Vulnerabilities with CVSS scores of 7.0-8.9</li>
+                        <li><strong>Medium:</strong> Vulnerabilities with CVSS scores of 4.0-6.9</li>
+                        <li><strong>Low:</strong> Vulnerabilities with CVSS scores of 0.1-3.9</li>
+                        <li><strong>Negligible:</strong> Vulnerabilities with minimal impact</li>
+                        <li><strong>Unknown:</strong> Vulnerabilities without assigned severity scores</li>
+                    </ul>
+                </div>
+                
+                <div class="appendix-section">
+                    <h3>About Chainguard Images</h3>
+                    <p>Chainguard Images are container images built with security-first principles:</p>
+                    <ul>
+                        <li><strong>Minimal Base:</strong> Built on minimal base images to reduce attack surface</li>
+                        <li><strong>Distroless:</strong> Contains only application dependencies, no package managers</li>
+                        <li><strong>Regular Updates:</strong> Continuously updated with latest security patches</li>
+                        <li><strong>Zero CVEs:</strong> Many images maintain zero known vulnerabilities</li>
+                        <li><strong>SBOM Included:</strong> Software Bill of Materials for transparency</li>
+                        <li><strong>Provenance Tracking:</strong> Complete software supply chain transparency with cryptographic attestations and verifiable build processes</li>
+                    </ul>
+                </div></div>
+            
+            <!-- Footer integrated within appendix container -->
+            <div class="footer">
+                <p>This report is Sample_Customer & Chainguard Confidential | Generated on 2025-08-03 15:57:01</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
