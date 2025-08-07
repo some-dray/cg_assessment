@@ -61,10 +61,11 @@ class CVEScanner:
     SEVERITY_ORDER = ['Critical', 'High', 'Medium', 'Low', 'Negligible', 'Unknown']
     CHAINGUARD_LOGO_URL = "Linky_White.png"
     
-    def __init__(self):
+    def __init__(self, platform=None):
         self.failed_scans = []
         self.failed_rows = []
         self._lock = threading.Lock()
+        self.platform = platform
         
     def check_grype_installation(self) -> bool:
         """Check if Grype is installed and accessible"""
@@ -91,7 +92,10 @@ class CVEScanner:
         
         try:
             # Run grype scan with JSON output
-            cmd = ['grype', '-o', 'json', image_name]
+            cmd = ['grype', '-o', 'json']
+            if self.platform:
+                cmd.extend(['--platform', self.platform])
+            cmd.append(image_name)
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             
             if result.returncode != 0:
@@ -1861,6 +1865,9 @@ Examples:
   
   # With custom appendix and customer name:
   %(prog)s -s image_pairs.csv -o report.html -e summary.md -a appendix.md -c "Customer Name"
+  
+  # With specific platform:
+  %(prog)s -s image_pairs.csv -o report.html --platform linux/amd64
 
 File Format:
   CSV: Chainguard_Image,Customer_Image
@@ -1885,10 +1892,12 @@ Performance:
                        help='Timeout in seconds per image scan (default: 300)')
     parser.add_argument('-c', '--customer-name', 
                        help='Customer name for report footer (default: "Customer")')
+    parser.add_argument('--platform', 
+                       help='Platform to use for Grype scans (e.g., "linux/amd64", "linux/arm64")')
     
     args = parser.parse_args()
     
-    scanner = CVEScanner()
+    scanner = CVEScanner(platform=args.platform)
     
     # Check if Grype is installed
     if not scanner.check_grype_installation():
