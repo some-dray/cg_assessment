@@ -481,7 +481,6 @@ class CVEScanner:
 
         <!-- Executive Summary -->
         <div class="image-comparison-section no-break">
-            <h2>Executive Summary</h2>
             {exec_summary}
         </div>
 
@@ -532,10 +531,26 @@ class CVEScanner:
                 <table>
                     <thead>
                         <tr>
-                            <th>Your Image</th>
-                            <th>Total Vulnerabilities</th>
-                            <th>Chainguard Image <span style="font-size: 0.8em; font-weight: normal;">(cgr.dev)</span></th>
-                            <th>Total Vulnerabilities</th>
+                            <th rowspan="2">Your Image</th>
+                            <th colspan="7">Total Vulnerabilities</th>
+                            <th rowspan="2">Chainguard Image <span style="font-size: 0.8em; font-weight: normal;">(cgr.dev)</span></th>
+                            <th colspan="7">Total Vulnerabilities</th>
+                        </tr>
+                        <tr>
+                            <th>Total</th>
+                            <th><span class="vuln-badge vuln-critical legend-badge">C</span></th>
+                            <th><span class="vuln-badge vuln-high legend-badge">H</span></th>
+                            <th><span class="vuln-badge vuln-medium legend-badge">M</span></th>
+                            <th><span class="vuln-badge vuln-low legend-badge">L</span></th>
+                            <th><span class="vuln-badge vuln-negligible legend-badge">N</span></th>
+                            <th><span class="vuln-badge vuln-unknown legend-badge">U</span></th>
+                            <th>Total</th>
+                            <th><span class="vuln-badge vuln-critical legend-badge">C</span></th>
+                            <th><span class="vuln-badge vuln-high legend-badge">H</span></th>
+                            <th><span class="vuln-badge vuln-medium legend-badge">M</span></th>
+                            <th><span class="vuln-badge vuln-low legend-badge">L</span></th>
+                            <th><span class="vuln-badge vuln-negligible legend-badge">N</span></th>
+                            <th><span class="vuln-badge vuln-unknown legend-badge">U</span></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -608,7 +623,7 @@ class CVEScanner:
         return table_html
     
     def _generate_comparison_table_rows(self, image_pairs: List[Dict]) -> str:
-        """Generate HTML table rows for image comparisons"""
+        """Generate HTML table rows for image comparisons with individual severity columns"""
         rows = []
         for pair in image_pairs:
             customer = pair['customer']
@@ -618,9 +633,13 @@ class CVEScanner:
             customer_display_name = self._get_display_name(customer)
             chainguard_display_name = self._get_display_name(chainguard) if chainguard else "No corresponding image found"
             
-            # Format vulnerability breakdowns
-            customer_breakdown = self._format_vulnerability_breakdown(customer)
-            chainguard_breakdown = self._format_vulnerability_breakdown(chainguard) if chainguard else "-"
+            # Generate individual severity counts for customer image
+            customer_total = customer.total_vulnerabilities if customer.scan_successful else 0
+            customer_counts = self._get_severity_counts(customer)
+            
+            # Generate individual severity counts for chainguard image  
+            chainguard_total = chainguard.total_vulnerabilities if chainguard and chainguard.scan_successful else 0
+            chainguard_counts = self._get_severity_counts(chainguard) if chainguard else {severity: 0 for severity in self.SEVERITY_ORDER}
             chainguard_class = "" if chainguard else ' class="no-match"'
             
             rows.append(f"""
@@ -628,16 +647,36 @@ class CVEScanner:
                     <td class="image-name-cell">
                         <code class="image-name">{customer_display_name}</code>
                     </td>
-                    <td class="vulnerability-count">{customer_breakdown}</td>
+                    <td class="vulnerability-count">{customer_total}</td>
+                    <td class="severity-count">{customer_counts['Critical']}</td>
+                    <td class="severity-count">{customer_counts['High']}</td>
+                    <td class="severity-count">{customer_counts['Medium']}</td>
+                    <td class="severity-count">{customer_counts['Low']}</td>
+                    <td class="severity-count">{customer_counts['Negligible']}</td>
+                    <td class="severity-count">{customer_counts['Unknown']}</td>
                     <td class="image-name-cell{chainguard_class}">
                         {'<code class="image-name">' + chainguard_display_name + '</code>' if chainguard else '<span class="no-match">' + chainguard_display_name + '</span>'}
                     </td>
-                    <td class="vulnerability-count{chainguard_class}">
-                        {'<span class="no-match">' + str(chainguard_breakdown) + '</span>' if not chainguard else str(chainguard_breakdown)}
-                    </td>
+                    <td class="vulnerability-count{chainguard_class}">{chainguard_total}</td>
+                    <td class="severity-count{chainguard_class}">{chainguard_counts['Critical']}</td>
+                    <td class="severity-count{chainguard_class}">{chainguard_counts['High']}</td>
+                    <td class="severity-count{chainguard_class}">{chainguard_counts['Medium']}</td>
+                    <td class="severity-count{chainguard_class}">{chainguard_counts['Low']}</td>
+                    <td class="severity-count{chainguard_class}">{chainguard_counts['Negligible']}</td>
+                    <td class="severity-count{chainguard_class}">{chainguard_counts['Unknown']}</td>
                 </tr>
             """)
         return ''.join(rows)
+    
+    def _get_severity_counts(self, vuln_data: VulnerabilityData) -> Dict[str, int]:
+        """Get individual severity counts for a vulnerability data object"""
+        if not vuln_data or not vuln_data.scan_successful:
+            return {severity: 0 for severity in self.SEVERITY_ORDER}
+        
+        # Return the severity breakdown, ensuring all severity levels are present
+        counts = {severity: 0 for severity in self.SEVERITY_ORDER}
+        counts.update(vuln_data.severity_breakdown)
+        return counts
     
     def _get_display_name(self, vuln_data: VulnerabilityData) -> str:
         """Get display name for image with asterisk if retried"""
@@ -751,10 +790,6 @@ class CVEScanner:
                     <div class="legend-item">
                         <span class="vuln-badge vuln-unknown legend-badge">U</span>
                         <span class="legend-label">Unknown</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="vuln-badge vuln-clean legend-badge">Clean</span>
-                        <span class="legend-label">No Vulnerabilities</span>
                     </div>
                 </div>
             </div>
@@ -873,16 +908,37 @@ class CVEScanner:
     .navbar { display: none; }
     .container { padding-top: 0; }
     
-    /* Enhanced table page breaking for new structure */
+    /* Enhanced table page breaking for new wider structure */
     .image-table-container {
         page-break-inside: avoid;
         break-inside: avoid;
         box-shadow: 0 4px 8px rgba(20, 0, 61, 0.15);
+        overflow-x: visible;
     }
     
     .image-table-container table {
         page-break-inside: auto;
         border: 2px solid var(--cg-primary);
+        font-size: 9px;
+        min-width: auto;
+    }
+    
+    .image-table-container th,
+    .image-table-container td {
+        padding: 6px 3px;
+        font-size: 9px;
+    }
+    
+    .severity-count {
+        padding: 4px 2px;
+        font-size: 10px;
+        min-width: 25px;
+    }
+    
+    .image-name {
+        font-size: 8px;
+        padding: 2px 4px;
+        max-width: 150px;
     }
     
     .image-table-container thead {
@@ -1318,10 +1374,10 @@ code {
     font-weight: 500;
 }
 
-/* Enhanced Professional table styling */
+/* Enhanced Professional table styling for wider table structure */
 .image-table-container {
     width: 100%;
-    overflow: visible;
+    overflow-x: auto;
     margin: 30px 0;
     page-break-inside: avoid;
     break-inside: avoid;
@@ -1336,23 +1392,24 @@ code {
     border-spacing: 0;
     border-radius: 12px;
     overflow: hidden;
-    table-layout: fixed;
+    table-layout: auto;
     page-break-inside: auto;
     border: 2px solid var(--cg-light);
+    min-width: 1200px;
 }
 
 .image-table-container th,
 .image-table-container td {
-    padding: 16px 12px;
+    padding: 12px 8px;
     border-bottom: 1px solid var(--cg-gray-medium);
-    text-align: left;
-    font-size: 12px;
+    text-align: center;
+    font-size: 11px;
     vertical-align: middle;
     word-wrap: break-word;
     overflow-wrap: break-word;
     page-break-inside: avoid;
     break-inside: avoid;
-    line-height: 1.5;
+    line-height: 1.4;
 }
 
 .image-table-container thead th {
@@ -1385,31 +1442,43 @@ code {
     background-color: rgba(116, 69, 251, 0.08);
 }
 
-/* Simplified table cell styling */
+/* Enhanced table cell styling for new column structure */
 .image-name {
     font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", "Courier New", monospace;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     color: var(--cg-primary);
     background: rgba(255, 255, 255, 0.8);
-    padding: 4px 8px;
-    border-radius: 6px;
+    padding: 3px 6px;
+    border-radius: 4px;
     border: 1px solid var(--cg-light);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
 }
 
 .image-name-cell {
-    width: 40%;
-}
-
-.breakdown-cell {
-    width: 10%;
+    width: 25%;
+    text-align: left;
+    min-width: 200px;
 }
 
 .vulnerability-count {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
     color: var(--cg-primary);
-    text-align: left;
+    text-align: center;
+    min-width: 60px;
+}
+
+.severity-count {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--cg-primary);
+    text-align: center;
+    min-width: 35px;
+    padding: 8px 4px;
 }
 
 .no-match {
