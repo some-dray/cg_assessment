@@ -18,6 +18,7 @@ A Python tool that demonstrates Chainguard's value proposition by scanning conta
 - Python 3.6+
 - [Grype](https://github.com/anchore/grype) vulnerability scanner
 - Optional: `markdown` Python package for enhanced markdown support
+- Optional: `weasyprint` Python package for PDF generation
 
 ## Installation
 
@@ -33,6 +34,9 @@ A Python tool that demonstrates Chainguard's value proposition by scanning conta
 2. Install Python dependencies (optional):
    ```bash
    pip install -r requirements.txt
+   
+   # For PDF generation:
+   pip install weasyprint
    ```
 
 ## Usage
@@ -42,6 +46,9 @@ The tool supports CSV format with **parallel scanning** for improved performance
 ```bash
 # CSV format (best performance with parallel scanning)
 python3 cve_scanner.py -s sample.csv -o report.html -e sample-exec-summary.md --max-workers 8
+
+# Generate PDF directly:
+python3 cve_scanner.py -s sample.csv -o report.pdf --timeout-per-image 1200 -c "Your Company"
 
 # With custom appendix
 python3 cve_scanner.py -s sample.csv -o report.html -e sample-exec-summary.md -a sample-appendix.md
@@ -68,7 +75,7 @@ cgr.dev/chainguard-private/logstash:7,logstash:7.17.0
 
 - `-s, --source`: Source images (required)
   - **CSV file**: `image_pairs.csv`
-- `-o, --output`: Output HTML file path (required)
+- `-o, --output`: Output file path (required) - supports `.html` or `.pdf` extensions
 - `-e, --exec-summary`: Optional markdown file for executive summary
 - `-a, --appendix`: Optional markdown file for custom appendix content (appears above methodology)
 - `-c, --customer-name`: Customer name for report footer (default: "Customer")
@@ -120,17 +127,31 @@ The generated HTML report includes:
 8. **Structured Severity Display**: Professional table format with color-coded severity indicators for improved readability
 9. **Professional Branding**: Elegant Chainguard theme with proper spacing and typography
 
-## PDF Conversion
+## PDF Generation
 
-The HTML reports are specifically optimized for PDF conversion:
+The tool supports direct PDF generation using WeasyPrint:
 
-- **Table-based layouts** instead of flexbox for better PDF compatibility
-- **Structured severity tables** with proper headers and color-coded indicators
-- **Fixed table layouts** prevent content overflow
+```bash
+# Generate PDF directly
+python3 cve_scanner.py -s sample.csv -o report.pdf -c "Your Company"
+
+# HTML output (for manual PDF conversion)
+python3 cve_scanner.py -s sample.csv -o report.html -c "Your Company"
+```
+
+**PDF Features:**
+- **Direct PDF generation** using WeasyPrint when output ends in `.pdf`
+- **Professional styling** optimized for PDF rendering
 - **Page break controls** to avoid section splitting
-- **Professional color scheme** using Chainguard brand colors
-- **Consistent typography** and spacing throughout
-- **White bounding boxes** for clear section separation
+- **Clean headers and footers** with proper spacing
+- **Table-based layouts** for reliable PDF compatibility
+- **Fallback to HTML** if WeasyPrint is not available
+
+**Manual PDF Conversion:**
+The HTML reports are also optimized for manual PDF conversion using tools like:
+- Chrome/Firefox print-to-PDF
+- wkhtmltopdf
+- Puppeteer
 
 ## Custom Appendix
 
