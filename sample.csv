@@ -1,4 +1,5 @@
-Chainguard_Image,Customer_image
-cgr.dev/chainguard-private/jdk:openjdk-21,alpine/java:21
-cgr.dev/chainguard-private/python:latest,python:latest
-cgr.dev/chainguard-private/nginx:latest,nginx:latest
+Customer_Image,Chainguard_Image
+prom/prometheus:latest, cgr.dev/chainguard-private/prometheus
+openjdk:21,cgr.dev/chainguard-private/jdk:openjdk-21
+nginx,cgr.dev/chainguard-private/nginx
+logstash:7.17.0,cgr.dev/chainguard-private/logstash:7
