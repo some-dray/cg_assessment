@@ -18,6 +18,8 @@ from pathlib import Path
 import csv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import hashlib
+import time
 try:
     import markdown
     MARKDOWN_AVAILABLE = True
@@ -61,11 +63,133 @@ class CVEScanner:
     SEVERITY_ORDER = ['Critical', 'High', 'Medium', 'Low', 'Negligible', 'Unknown']
     CHAINGUARD_LOGO_URL = "Linky_White.png"
     
-    def __init__(self, platform=None):
+    def __init__(self, platform=None, cache_dir=".cache", cache_ttl_hours=24):
         self.failed_scans = []
         self.failed_rows = []
         self._lock = threading.Lock()
         self.platform = platform
+        self.cache_dir = Path(cache_dir)
+        self.cache_ttl_hours = cache_ttl_hours
+        self.cache_file = self.cache_dir / "scan_cache.json"
+        self._setup_cache()
+    
+    def _setup_cache(self):
+        """Initialize cache directory and file"""
+        self.cache_dir.mkdir(exist_ok=True)
+        if not self.cache_file.exists():
+            self._save_cache({})
+    
+    def _load_cache(self) -> Dict:
+        """Load cache from file"""
+        try:
+            with open(self.cache_file, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+    
+    def _save_cache(self, cache_data: Dict):
+        """Save cache to file"""
+        with open(self.cache_file, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+    
+    def _get_image_digest(self, image_name: str) -> Optional[str]:
+        """Get image digest using docker or podman"""
+        for cmd in ['docker', 'podman']:
+            try:
+                result = subprocess.run([cmd, 'inspect', '--format={{.RepoDigests}}', image_name], 
+                                      capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    digest_info = result.stdout.strip()
+                    # Extract SHA256 digest from format like [registry/image@sha256:...]
+                    if '@sha256:' in digest_info:
+                        digest = digest_info.split('@sha256:')[1].split(']')[0].split()[0]
+                        return f"sha256:{digest}"
+                    else:
+                        # If no digest available, pull image to get digest
+                        logger.info(f"No digest found for {image_name}, attempting to pull...")
+                        pull_result = subprocess.run([cmd, 'pull', image_name], 
+                                                   capture_output=True, text=True, timeout=300)
+                        if pull_result.returncode == 0:
+                            # Try inspect again
+                            result = subprocess.run([cmd, 'inspect', '--format={{.RepoDigests}}', image_name], 
+                                                  capture_output=True, text=True, timeout=30)
+                            if result.returncode == 0 and '@sha256:' in result.stdout:
+                                digest_info = result.stdout.strip()
+                                digest = digest_info.split('@sha256:')[1].split(']')[0].split()[0]
+                                return f"sha256:{digest}"
+                        # Fallback: use image ID as identifier
+                        id_result = subprocess.run([cmd, 'inspect', '--format={{.Id}}', image_name], 
+                                                 capture_output=True, text=True, timeout=30)
+                        if id_result.returncode == 0:
+                            return id_result.stdout.strip()
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+        
+        # Fallback: create a hash from image name and current time (not ideal but better than nothing)
+        logger.debug(f"Could not get digest for {image_name}, using fallback hash (docker/podman not available or image not accessible)")
+        return hashlib.sha256(f"{image_name}:{int(time.time() / 3600)}".encode()).hexdigest()[:16]
+    
+    def _get_cache_key(self, image_name: str, digest: str) -> str:
+        """Generate cache key from image name and digest"""
+        platform_suffix = f"_{self.platform}" if self.platform else ""
+        return f"{image_name}#{digest}{platform_suffix}"
+    
+    def _is_cache_valid(self, cache_entry: Dict) -> bool:
+        """Check if cache entry is still valid based on TTL"""
+        if 'timestamp' not in cache_entry:
+            return False
+        cache_age_hours = (time.time() - cache_entry['timestamp']) / 3600
+        return cache_age_hours < self.cache_ttl_hours
+    
+    def _get_cached_scan_result(self, image_name: str) -> Optional[VulnerabilityData]:
+        """Get cached scan result if available and valid"""
+        digest = self._get_image_digest(image_name)
+        if not digest:
+            return None
+        
+        cache_key = self._get_cache_key(image_name, digest)
+        cache_data = self._load_cache()
+        
+        if cache_key in cache_data and self._is_cache_valid(cache_data[cache_key]):
+            logger.info(f"Using cached scan result for {image_name}")
+            cached = cache_data[cache_key]
+            return VulnerabilityData(
+                image_name=cached['image_name'],
+                total_vulnerabilities=cached['total_vulnerabilities'],
+                severity_breakdown=cached['severity_breakdown'],
+                vulnerabilities=cached['vulnerabilities'],
+                scan_successful=cached['scan_successful'],
+                error_message=cached.get('error_message', ''),
+                was_retried=cached.get('was_retried', False),
+                original_image_name=cached.get('original_image_name', cached['image_name'])
+            )
+        return None
+    
+    def _cache_scan_result(self, image_name: str, vuln_data: VulnerabilityData):
+        """Cache scan result with image digest"""
+        digest = self._get_image_digest(image_name)
+        if not digest:
+            return
+        
+        cache_key = self._get_cache_key(image_name, digest)
+        cache_data = self._load_cache()
+        
+        cache_entry = {
+            'image_name': vuln_data.image_name,
+            'total_vulnerabilities': vuln_data.total_vulnerabilities,
+            'severity_breakdown': vuln_data.severity_breakdown,
+            'vulnerabilities': vuln_data.vulnerabilities,
+            'scan_successful': vuln_data.scan_successful,
+            'error_message': vuln_data.error_message,
+            'was_retried': vuln_data.was_retried,
+            'original_image_name': vuln_data.original_image_name,
+            'timestamp': time.time(),
+            'digest': digest
+        }
+        
+        cache_data[cache_key] = cache_entry
+        self._save_cache(cache_data)
+        logger.info(f"Cached scan result for {image_name} (digest: {digest[:16]}...)")
         
     def check_grype_installation(self) -> bool:
         """Check if Grype is installed and accessible"""
@@ -83,7 +207,67 @@ class CVEScanner:
     
     def scan_image(self, image_name: str) -> VulnerabilityData:
         """Scan a single image with Grype and return vulnerability data"""
-        return self._scan_image_with_retry(image_name, retry=True)
+        # Check cache first
+        cached_result = self._get_cached_scan_result(image_name)
+        if cached_result:
+            return cached_result
+        
+        # No cache hit, perform actual scan
+        result = self._scan_image_with_retry(image_name, retry=True)
+        
+        # Cache the result if scan was successful
+        if result.scan_successful:
+            self._cache_scan_result(image_name, result)
+        
+        return result
+    
+    def _categorize_scan_error(self, error_output: str, image_name: str) -> Tuple[str, str]:
+        """Categorize scan errors and return user-friendly error type and message"""
+        error_lower = error_output.lower()
+        
+        # Authentication/Access errors
+        if any(phrase in error_lower for phrase in [
+            'authentication required', 'unauthorized', 'access denied', 
+            'pull access denied', 'docker login', 'requested access to the resource is denied'
+        ]):
+            return "ACCESS_DENIED", f"Access denied for '{image_name}'. This image may be private or require authentication."
+        
+        # Image not found errors
+        if any(phrase in error_lower for phrase in [
+            'repository does not exist', 'not found', 'no such image', 
+            'manifest unknown', 'image not found', 'does not exist'
+        ]):
+            return "IMAGE_NOT_FOUND", f"Image '{image_name}' not found. Please verify the image name and tag are correct."
+        
+        # Network/connectivity errors
+        if any(phrase in error_lower for phrase in [
+            'network', 'timeout', 'connection', 'dial tcp', 'no route to host',
+            'temporary failure in name resolution'
+        ]):
+            return "NETWORK_ERROR", f"Network error accessing '{image_name}'. Check your internet connection."
+        
+        # Registry/service unavailable errors
+        if any(phrase in error_lower for phrase in [
+            'service unavailable', 'registry unavailable', 'server error',
+            'internal server error', 'bad gateway'
+        ]):
+            return "REGISTRY_ERROR", f"Registry error for '{image_name}'. The image registry may be temporarily unavailable."
+        
+        # Platform/architecture mismatch
+        if any(phrase in error_lower for phrase in [
+            'no matching manifest', 'platform', 'architecture', 'unsupported platform'
+        ]):
+            platform_info = f" (platform: {self.platform})" if self.platform else ""
+            return "PLATFORM_ERROR", f"Platform mismatch for '{image_name}'{platform_info}. Image may not be available for this architecture."
+        
+        # Grype-specific errors
+        if any(phrase in error_lower for phrase in [
+            'failed to catalog', 'grype', 'syft'
+        ]):
+            return "SCAN_ERROR", f"Grype failed to scan '{image_name}'. The image format may be unsupported."
+        
+        # Generic/unknown error
+        return "UNKNOWN_ERROR", f"Unknown error scanning '{image_name}'. See logs for details."
     
     def _scan_image_with_retry(self, image_name: str, retry: bool = True) -> VulnerabilityData:
         """Internal method to scan image with optional retry logic"""
@@ -99,31 +283,54 @@ class CVEScanner:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             
             if result.returncode != 0:
-                # If scan failed and retry is enabled, try with :latest tag
-                if retry and not image_name.endswith(':latest'):
-                    logger.info(f"Initial scan failed for {image_name}, retrying with :latest tag")
-                    # If image has no tag, add :latest; if it has a tag, replace with :latest
-                    if ':' in image_name:
-                        base_image = image_name.split(':')[0]
-                        latest_image = f"{base_image}:latest"
-                    else:
-                        latest_image = f"{image_name}:latest"
-                    retry_result = self._scan_image_with_retry(latest_image, retry=False)
+                # If scan failed and retry is enabled, try fallback strategies
+                if retry:
+                    # Strategy 1: Try with :latest tag if not already using it
+                    if not image_name.endswith(':latest'):
+                        logger.info(f"Initial scan failed for {image_name}, retrying with :latest tag")
+                        # If image has no tag, add :latest; if it has a tag, replace with :latest
+                        if ':' in image_name:
+                            base_image = image_name.split(':')[0]
+                            latest_image = f"{base_image}:latest"
+                        else:
+                            latest_image = f"{image_name}:latest"
+                        retry_result = self._scan_image_with_retry(latest_image, retry=False)
+                        
+                        if retry_result.scan_successful:
+                            logger.info(f"Retry successful for {latest_image}")
+                            return VulnerabilityData(
+                                image_name=retry_result.image_name,
+                                total_vulnerabilities=retry_result.total_vulnerabilities,
+                                severity_breakdown=retry_result.severity_breakdown,
+                                vulnerabilities=retry_result.vulnerabilities,
+                                scan_successful=True,
+                                was_retried=True,
+                                original_image_name=original_image_name
+                            )
                     
-                    if retry_result.scan_successful:
-                        logger.info(f"Retry successful for {latest_image}")
-                        return VulnerabilityData(
-                            image_name=retry_result.image_name,
-                            total_vulnerabilities=retry_result.total_vulnerabilities,
-                            severity_breakdown=retry_result.severity_breakdown,
-                            vulnerabilities=retry_result.vulnerabilities,
-                            scan_successful=True,
-                            was_retried=True,
-                            original_image_name=original_image_name
-                        )
+                    # Strategy 2: Try mirror.gcr.io fallback for Docker Hub images
+                    mirror_image = self._try_mirror_gcr_fallback(original_image_name)
+                    if mirror_image:
+                        logger.info(f"Trying mirror.gcr.io fallback for {original_image_name} -> {mirror_image}")
+                        mirror_result = self._scan_image_with_retry(mirror_image, retry=False)
+                        
+                        if mirror_result.scan_successful:
+                            logger.info(f"Mirror.gcr.io fallback successful for {mirror_image}")
+                            return VulnerabilityData(
+                                image_name=mirror_result.image_name,
+                                total_vulnerabilities=mirror_result.total_vulnerabilities,
+                                severity_breakdown=mirror_result.severity_breakdown,
+                                vulnerabilities=mirror_result.vulnerabilities,
+                                scan_successful=True,
+                                was_retried=True,
+                                original_image_name=original_image_name
+                            )
                 
-                error_msg = f"Grype scan failed for {image_name}: {result.stderr}"
-                logger.error(error_msg)
+                error_type, user_friendly_msg = self._categorize_scan_error(result.stderr, image_name)
+                logger.error(f"[{error_type}] {user_friendly_msg}")
+                # Log detailed error for debugging
+                if result.stderr.strip():
+                    logger.debug(f"Detailed error for {image_name}: {result.stderr}")
                 self.failed_scans.append(original_image_name)
                 return VulnerabilityData(
                     image_name=image_name,
@@ -131,7 +338,7 @@ class CVEScanner:
                     severity_breakdown={},
                     vulnerabilities=[],
                     scan_successful=False,
-                    error_message=error_msg,
+                    error_message=user_friendly_msg,
                     original_image_name=original_image_name
                 )
             
@@ -160,31 +367,51 @@ class CVEScanner:
             )
             
         except subprocess.TimeoutExpired:
-            # If scan timed out and retry is enabled, try with :latest tag
-            if retry and not image_name.endswith(':latest'):
-                logger.info(f"Scan timeout for {image_name}, retrying with :latest tag")
-                # If image has no tag, add :latest; if it has a tag, replace with :latest
-                if ':' in image_name:
-                    base_image = image_name.split(':')[0]
-                    latest_image = f"{base_image}:latest"
-                else:
-                    latest_image = f"{image_name}:latest"
-                retry_result = self._scan_image_with_retry(latest_image, retry=False)
+            # If scan timed out and retry is enabled, try fallback strategies
+            if retry:
+                # Strategy 1: Try with :latest tag if not already using it
+                if not image_name.endswith(':latest'):
+                    logger.info(f"Scan timeout for {image_name}, retrying with :latest tag")
+                    # If image has no tag, add :latest; if it has a tag, replace with :latest
+                    if ':' in image_name:
+                        base_image = image_name.split(':')[0]
+                        latest_image = f"{base_image}:latest"
+                    else:
+                        latest_image = f"{image_name}:latest"
+                    retry_result = self._scan_image_with_retry(latest_image, retry=False)
+                    
+                    if retry_result.scan_successful:
+                        logger.info(f"Retry successful for {latest_image}")
+                        return VulnerabilityData(
+                            image_name=retry_result.image_name,
+                            total_vulnerabilities=retry_result.total_vulnerabilities,
+                            severity_breakdown=retry_result.severity_breakdown,
+                            vulnerabilities=retry_result.vulnerabilities,
+                            scan_successful=True,
+                            was_retried=True,
+                            original_image_name=original_image_name
+                        )
                 
-                if retry_result.scan_successful:
-                    logger.info(f"Retry successful for {latest_image}")
-                    return VulnerabilityData(
-                        image_name=retry_result.image_name,
-                        total_vulnerabilities=retry_result.total_vulnerabilities,
-                        severity_breakdown=retry_result.severity_breakdown,
-                        vulnerabilities=retry_result.vulnerabilities,
-                        scan_successful=True,
-                        was_retried=True,
-                        original_image_name=original_image_name
-                    )
+                # Strategy 2: Try mirror.gcr.io fallback for Docker Hub images
+                mirror_image = self._try_mirror_gcr_fallback(original_image_name)
+                if mirror_image:
+                    logger.info(f"Trying mirror.gcr.io fallback after timeout for {original_image_name} -> {mirror_image}")
+                    mirror_result = self._scan_image_with_retry(mirror_image, retry=False)
+                    
+                    if mirror_result.scan_successful:
+                        logger.info(f"Mirror.gcr.io fallback successful for {mirror_image}")
+                        return VulnerabilityData(
+                            image_name=mirror_result.image_name,
+                            total_vulnerabilities=mirror_result.total_vulnerabilities,
+                            severity_breakdown=mirror_result.severity_breakdown,
+                            vulnerabilities=mirror_result.vulnerabilities,
+                            scan_successful=True,
+                            was_retried=True,
+                            original_image_name=original_image_name
+                        )
             
-            error_msg = f"Scan timeout for {image_name}"
-            logger.error(error_msg)
+            user_friendly_msg = f"Scan timeout for '{image_name}'. The image may be very large or the network connection is slow."
+            logger.error(f"[TIMEOUT] {user_friendly_msg}")
             self.failed_scans.append(original_image_name)
             return VulnerabilityData(
                 image_name=image_name,
@@ -192,12 +419,13 @@ class CVEScanner:
                 severity_breakdown={},
                 vulnerabilities=[],
                 scan_successful=False,
-                error_message=error_msg,
+                error_message=user_friendly_msg,
                 original_image_name=original_image_name
             )
         except json.JSONDecodeError as e:
-            error_msg = f"Failed to parse Grype output for {image_name}: {e}"
-            logger.error(error_msg)
+            user_friendly_msg = f"Failed to parse scan results for '{image_name}'. The scan output may be corrupted."
+            logger.error(f"[PARSE_ERROR] {user_friendly_msg}")
+            logger.debug(f"JSON decode error for {image_name}: {e}")
             self.failed_scans.append(original_image_name)
             return VulnerabilityData(
                 image_name=image_name,
@@ -205,12 +433,13 @@ class CVEScanner:
                 severity_breakdown={},
                 vulnerabilities=[],
                 scan_successful=False,
-                error_message=error_msg,
+                error_message=user_friendly_msg,
                 original_image_name=original_image_name
             )
         except Exception as e:
-            error_msg = f"Unexpected error scanning {image_name}: {e}"
-            logger.error(error_msg)
+            user_friendly_msg = f"Unexpected error scanning '{image_name}'. Check the image name and try again."
+            logger.error(f"[UNEXPECTED_ERROR] {user_friendly_msg}")
+            logger.debug(f"Unexpected error details for {image_name}: {e}")
             self.failed_scans.append(original_image_name)
             return VulnerabilityData(
                 image_name=image_name,
@@ -218,7 +447,7 @@ class CVEScanner:
                 severity_breakdown={},
                 vulnerabilities=[],
                 scan_successful=False,
-                error_message=error_msg,
+                error_message=user_friendly_msg,
                 original_image_name=original_image_name
             )
     
@@ -323,8 +552,8 @@ class CVEScanner:
                     logger.warning(f"CSV row {line_num}: Expected at least 2 columns, got {len(row)}. Skipping.")
                     continue
                 
-                chainguard_image = str(row[0]).strip()
-                customer_image = str(row[1]).strip()
+                customer_image = str(row[0]).strip()
+                chainguard_image = str(row[1]).strip()
                 
                 if chainguard_image and customer_image:
                     image_pairs.append(ImagePair(chainguard_image, customer_image))
@@ -355,9 +584,9 @@ class CVEScanner:
                 return f"""
                 <h2>Executive Summary</h2>
                 <p>This report compares the vulnerability exposure between your current container images 
-                and Chainguard's hardened alternatives. Analysis of {metrics['images_scanned']} image pairs 
+                and Chainguard's hardened alternatives. Analysis of {self._format_number(metrics['images_scanned'])} image pairs 
                 shows a <strong>{metrics['reduction_percentage']}% overall CVE reduction</strong>, with 
-                {metrics['total_reduction']} fewer vulnerabilities when using Chainguard images.</p>
+                {self._format_number(metrics['total_reduction'])} fewer vulnerabilities when using Chainguard images.</p>
                 <p>Chainguard images are built with security-first principles, utilizing minimal base images 
                 and eliminating unnecessary components to significantly reduce your attack surface.</p>
                 """
@@ -402,13 +631,13 @@ class CVEScanner:
     def _interpolate_template_variables(self, content: str, metrics: Dict, customer_name: Optional[str] = None) -> str:
         """Replace template variables in content with actual metrics and customer info"""
         replacements = {
-            '{{images_scanned}}': str(metrics['images_scanned']),
-            '{{total_customer_vulns}}': str(metrics['total_customer_vulns']),
-            '{{total_chainguard_vulns}}': str(metrics['total_chainguard_vulns']),
-            '{{total_reduction}}': str(metrics['total_reduction']),
+            '{{images_scanned}}': self._format_number(metrics['images_scanned']),
+            '{{total_customer_vulns}}': self._format_number(metrics['total_customer_vulns']),
+            '{{total_chainguard_vulns}}': self._format_number(metrics['total_chainguard_vulns']),
+            '{{total_reduction}}': self._format_number(metrics['total_reduction']),
             '{{reduction_percentage}}': f"{metrics['reduction_percentage']}%",
             '{{average_reduction_per_image}}': f"{metrics['average_reduction_per_image']}%",
-            '{{images_with_reduction}}': str(metrics['images_with_reduction']),
+            '{{images_with_reduction}}': self._format_number(metrics['images_with_reduction']),
             '{{customer_name}}': customer_name or "Customer"
         }
         
@@ -493,7 +722,7 @@ class CVEScanner:
                     {metrics['reduction_percentage']}%
                     <span>CVE Reduction</span>
                 </div>
-                <p style="text-align: center; margin: 0; font-size: 16px; color: var(--cg-primary);"><strong>{metrics['total_reduction']}</strong> fewer vulnerabilities with Chainguard images</p>
+                <p style="text-align: center; margin: 0; font-size: 16px; color: var(--cg-primary);"><strong>{self._format_number(metrics['total_reduction'])}</strong> fewer vulnerabilities with Chainguard images</p>
             </div>
             
             <!-- Overview Section within CVE Reduction Analysis -->
@@ -503,7 +732,7 @@ class CVEScanner:
                     <div class="summary-column-content">
                         <h2>Your Images</h2>
                         <div class="total-box customer-total">
-                            {customer_total}
+                            {self._format_number(customer_total)}
                             <span>Total Vulnerabilities</span>
                         </div>
                         {self._generate_severity_boxes(customer_summary)}
@@ -515,7 +744,7 @@ class CVEScanner:
                     <div class="summary-column-content">
                         <h2>Chainguard Images</h2>
                         <div class="total-box chainguard-total">
-                            {chainguard_total}
+                            {self._format_number(chainguard_total)}
                             <span>Total Vulnerabilities</span>
                         </div>
                         {self._generate_severity_boxes(chainguard_summary)}
@@ -591,7 +820,7 @@ class CVEScanner:
             count = summary.get(severity, 0)
             rows.append(f'''                                <tr>
                                     <td><span class="severity-indicator {severity.lower()}"></span>{severity}</td>
-                                    <td class="severity-count">{count}</td>
+                                    <td class="severity-count">{self._format_number(count)}</td>
                                 </tr>''')
         
         table_html = f'''<table class="summary-table">
@@ -660,7 +889,7 @@ class CVEScanner:
             count = vuln_data.severity_breakdown.get(severity, 0)
             if count > 0:
                 severity_class = severity.lower()
-                badges.append(f'<span class="vuln-badge vuln-{severity_class}">{count}</span>')
+                badges.append(f'<span class="vuln-badge vuln-{severity_class}">{self._format_number(count)}</span>')
         
         if not badges:
             return '<div class="vuln-breakdown-container"><span class="vuln-badge vuln-clean">Clean</span></div>'
@@ -1853,6 +2082,89 @@ em {
         """Get current datetime formatted string"""
         from datetime import datetime
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    def _format_number(self, number: int) -> str:
+        """Format number with comma separators for readability"""
+        return f"{number:,}"
+    
+    def _has_registry_prefix(self, image_name: str) -> bool:
+        """Check if image name has a registry prefix (not Docker Hub default)"""
+        # Docker Hub images can be:
+        # - library/image:tag (official images)
+        # - username/image:tag (user images)
+        # - image:tag (shorthand for library/image:tag)
+        
+        # If it contains a '.' or ':' before the first '/', it likely has a registry
+        if '/' in image_name:
+            registry_part = image_name.split('/')[0]
+            # Check if registry part contains a dot (domain) or port
+            if '.' in registry_part or ':' in registry_part:
+                return True
+        
+        return False
+    
+    def _try_mirror_gcr_fallback(self, image_name: str) -> Optional[str]:
+        """Try to create a mirror.gcr.io fallback for Docker Hub images"""
+        if self._has_registry_prefix(image_name):
+            return None  # Already has registry prefix
+        
+        # For Docker Hub images without explicit registry, try mirror.gcr.io
+        if '/' not in image_name:
+            # Single name image (e.g., "ubuntu:20.04" -> "mirror.gcr.io/library/ubuntu:20.04")
+            return f"mirror.gcr.io/library/{image_name}"
+        else:
+            # User/org image (e.g., "user/repo:tag" -> "mirror.gcr.io/user/repo:tag")
+            return f"mirror.gcr.io/{image_name}"
+    
+    def _analyze_failed_scans(self) -> Dict[str, List[str]]:
+        """Analyze failed scans and categorize them by error type"""
+        error_categories = {
+            "ACCESS_DENIED": [],
+            "IMAGE_NOT_FOUND": [],
+            "NETWORK_ERROR": [],
+            "REGISTRY_ERROR": [],
+            "PLATFORM_ERROR": [],
+            "SCAN_ERROR": [],
+            "TIMEOUT": [],
+            "PARSE_ERROR": [],
+            "UNEXPECTED_ERROR": [],
+            "UNKNOWN_ERROR": []
+        }
+        
+        # This would need to be enhanced to track error types per image
+        # For now, return empty categories
+        return error_categories
+    
+    def print_failure_summary(self):
+        """Print a summary of failed scans by category"""
+        if not self.failed_scans and not self.failed_rows:
+            return
+        
+        logger.info("=" * 60)
+        logger.info("SCAN FAILURE SUMMARY")
+        logger.info("=" * 60)
+        
+        if self.failed_rows:
+            logger.warning(f"Failed to scan {len(self.failed_rows)} image pairs (excluded from results):")
+            for i, row in enumerate(self.failed_rows, 1):
+                logger.warning(f"  {i}. {row}")
+            logger.info("")
+        
+        if self.failed_scans:
+            logger.warning(f"Individual image scan failures: {len(self.failed_scans)}")
+            for i, image in enumerate(self.failed_scans, 1):
+                logger.warning(f"  {i}. {image}")
+            logger.info("")
+        
+        # Provide helpful suggestions
+        logger.info("TROUBLESHOOTING TIPS:")
+        logger.info("• For ACCESS_DENIED errors: Check if images are private and require authentication")
+        logger.info("• For IMAGE_NOT_FOUND errors: Verify image names and tags are correct")
+        logger.info("• For NETWORK_ERROR: Check internet connection and registry accessibility")
+        logger.info("• For TIMEOUT errors: Try increasing --timeout-per-image or check network speed")
+        logger.info("• Use --platform flag if images are not available for your architecture")
+        logger.info("• Docker Hub rate limits: The tool automatically tries mirror.gcr.io as fallback")
+        logger.info("=" * 60)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1868,13 +2180,24 @@ Examples:
   
   # With specific platform:
   %(prog)s -s image_pairs.csv -o report.html --platform linux/amd64
+  
+  # With cache control:
+  %(prog)s -s image_pairs.csv -o report.html --cache-ttl 48 --cache-dir ./my_cache
 
 File Format:
-  CSV: Chainguard_Image,Customer_Image
+  CSV: Customer_Image,Chainguard_Image
   
 Performance:
   Use --max-workers to control parallel scanning (default: 4)
   Rows with any failed scans are excluded from results
+  
+Caching:
+  Scan results are cached using image digests for 24 hours by default
+  Use --no-cache to disable caching or --clear-cache to start fresh
+
+Registry Fallback:
+  Docker Hub images automatically fallback to mirror.gcr.io on failure
+  This helps with rate limits and connectivity issues
         """
     )
     
@@ -1894,10 +2217,31 @@ Performance:
                        help='Customer name for report footer (default: "Customer")')
     parser.add_argument('--platform', 
                        help='Platform to use for Grype scans (e.g., "linux/amd64", "linux/arm64")')
+    parser.add_argument('--cache-dir', default='.cache',
+                       help='Directory to store scan cache (default: .cache)')
+    parser.add_argument('--cache-ttl', type=int, default=24,
+                       help='Cache TTL in hours (default: 24)')
+    parser.add_argument('--no-cache', action='store_true',
+                       help='Disable caching and rescan all images')
+    parser.add_argument('--clear-cache', action='store_true',
+                       help='Clear existing cache before starting')
     
     args = parser.parse_args()
     
-    scanner = CVEScanner(platform=args.platform)
+    # Initialize scanner with cache settings
+    cache_ttl = 0 if args.no_cache else args.cache_ttl
+    scanner = CVEScanner(platform=args.platform, cache_dir=args.cache_dir, cache_ttl_hours=cache_ttl)
+    
+    # Handle cache clearing
+    if args.clear_cache:
+        logger.info("Clearing existing cache...")
+        if scanner.cache_file.exists():
+            scanner.cache_file.unlink()
+            scanner._setup_cache()
+        logger.info("Cache cleared.")
+    
+    if args.no_cache:
+        logger.info("Cache disabled - all images will be rescanned")
     
     # Check if Grype is installed
     if not scanner.check_grype_installation():
@@ -1922,18 +2266,13 @@ Performance:
     # Generate report (exec summary and appendix loaded inside with metrics)
     scanner.generate_html_report(scan_results, args.exec_summary, args.output, args.appendix, args.customer_name)
     
-    # Report failed scans and rows
-    if scanner.failed_rows:
-        logger.warning(f"Failed to scan {len(scanner.failed_rows)} rows (excluded from results):")
-        for row in scanner.failed_rows:
-            logger.warning(f"  - {row}")
+    # Print detailed failure summary with troubleshooting tips
+    scanner.print_failure_summary()
     
-    if scanner.failed_scans:
-        logger.warning(f"Individual failed scans: {len(scanner.failed_scans)} images:")
-        for image in scanner.failed_scans:
-            logger.warning(f"  - {image}")
-    
-    logger.info(f"Scan complete! Successfully processed {len(scan_results)} image pairs.")
+    # Final success message
+    total_pairs = len(scan_results) + len(scanner.failed_rows)
+    success_rate = (len(scan_results) / total_pairs * 100) if total_pairs > 0 else 0
+    logger.info(f"Scan complete! Successfully processed {len(scan_results)} of {total_pairs} image pairs ({success_rate:.1f}% success rate).")
 
 if __name__ == "__main__":
     main()
