@@ -60,8 +60,11 @@ python3 cve_scanner.py -s sample.csv -o report.html --no-cache
 # Clear existing cache and start fresh
 python3 cve_scanner.py -s sample.csv -o report.html --clear-cache
 
+# Generate a CSV of failed image pairs for retry/analysis
+python3 cve_scanner.py -s sample.csv -o report.html --failed-pairs-output failed_images.csv
+
 # Complete example with all options
-python3 cve_scanner.py -s sample.csv -o sample-customer.html -e sample-exec-summary.md -a sample-appendix.md -c "Sample Customer" --max-workers 2 --cache-ttl 24
+python3 cve_scanner.py -s sample.csv -o sample-customer.html -e sample-exec-summary.md -a sample-appendix.md -c "Sample Customer" --max-workers 2 --cache-ttl 24 --failed-pairs-output failed.csv
 
 ```
 
@@ -96,6 +99,9 @@ logstash:7.17.0,cgr.dev/chainguard-private/logstash:7
 - `--cache-ttl`: Cache TTL in hours (default: 24)
 - `--no-cache`: Disable caching and rescan all images
 - `--clear-cache`: Clear existing cache before starting
+
+**Output Options:**
+- `--failed-pairs-output`: Output CSV file path for failed image pairs
 
 
 ## Sample Files
@@ -172,6 +178,39 @@ The tool automatically handles Docker Hub connectivity issues and rate limiting:
 2. **Tag Retry**: If fails, try with `:latest` tag (existing behavior)
 3. **Registry Fallback**: If still fails and it's a Docker Hub image, try `mirror.gcr.io`
 4. **Detailed Logging**: Clear messages about each retry attempt
+
+## Failed Pairs Output
+
+The tool can generate a CSV file containing all image pairs that failed to scan:
+
+### Usage
+```bash
+# Generate failed pairs CSV
+python3 cve_scanner.py -s input.csv -o report.html --failed-pairs-output failed_images.csv
+
+# Use failed pairs as input for retry
+python3 cve_scanner.py -s failed_images.csv -o retry_report.html
+```
+
+### CSV Format
+The failed pairs CSV uses the same format as input files:
+```csv
+Customer_Image,Chainguard_Image
+bibinwilson/docker-kubectl-dig:0.2,cgr.dev/chainguard-private/kubectl
+some/failing-image:tag,cgr.dev/chainguard-private/alternative
+```
+
+### Benefits
+- **Easy Retry**: Use the generated CSV as input for subsequent scan attempts
+- **Failure Analysis**: Analyze patterns in failed images (authentication, network, etc.)
+- **Debugging**: Clear list of specific image pairs that need attention
+- **CI/CD Integration**: Automate handling of scan failures in pipelines
+- **Incremental Processing**: Focus re-scanning efforts on previously failed images
+
+### When Files Are Generated
+- Only created when `--failed-pairs-output` flag is provided
+- Only generated if there are actually failed pairs
+- Includes all pairs where either customer or Chainguard image failed to scan
 
 ## Report Features
 
@@ -295,11 +334,13 @@ This tool helps achieve:
    - Use `--timeout-per-image` to increase timeout if needed
 4. **Failed scans**: Check the CLI output for detailed error information
    - Tool provides categorized error messages (ACCESS_DENIED, IMAGE_NOT_FOUND, etc.)
+   - Use `--failed-pairs-output failed.csv` to generate a list of failed pairs for retry
 5. **Cache issues**: 
    - Use `--clear-cache` to start fresh if cache seems corrupted
    - Use `--no-cache` to bypass caching entirely
 6. **Docker/Podman not available**: Cache will use fallback hashing (less optimal but functional)
-7. **PDF conversion issues**: The HTML is optimized for PDF - use tools like Puppeteer, wkhtmltopdf, or Chrome's print-to-PDF
+7. **Retry failed scans**: Use the failed pairs CSV as input for subsequent runs
+8. **PDF conversion issues**: The HTML is optimized for PDF - use tools like Puppeteer, wkhtmltopdf, or Chrome's print-to-PDF
 
 ## Example Output
 

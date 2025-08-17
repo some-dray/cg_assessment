@@ -538,10 +538,15 @@ class CVEScanner:
                 if not row or len(row) == 0:
                     continue
                 
-                # Skip header row if it contains common header keywords
+                # Skip header row if it contains common header keywords (but not registry URLs)
                 if line_num == 1 and len(row) >= 2:
-                    if any(keyword in str(row[0]).lower() for keyword in ['chainguard', 'customer', 'image']) or \
-                       any(keyword in str(row[1]).lower() for keyword in ['chainguard', 'customer', 'image']):
+                    col1 = str(row[0]).strip().lower()
+                    col2 = str(row[1]).strip().lower()
+                    
+                    # Only skip if it looks like actual headers, not registry URLs
+                    header_keywords = ['customer_image', 'chainguard_image', 'image_name', 'customer image', 'chainguard image']
+                    if any(keyword in col1 for keyword in header_keywords) or \
+                       any(keyword in col2 for keyword in header_keywords):
                         continue
                 
                 # Skip comment rows (first cell starts with #)
@@ -2165,6 +2170,35 @@ em {
         logger.info("• Use --platform flag if images are not available for your architecture")
         logger.info("• Docker Hub rate limits: The tool automatically tries mirror.gcr.io as fallback")
         logger.info("=" * 60)
+    
+    def write_failed_pairs_csv(self, output_file: str):
+        """Write failed image pairs to a CSV file for retry/debugging"""
+        if not self.failed_rows:
+            logger.info("No failed image pairs to write.")
+            return
+        
+        try:
+            with open(output_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                # Write header
+                writer.writerow(['Customer_Image', 'Chainguard_Image'])
+                
+                # Parse and write failed rows
+                for failed_row in self.failed_rows:
+                    # Failed rows are stored as "chainguard_image | customer_image" format
+                    if ' | ' in failed_row:
+                        chainguard_img, customer_img = failed_row.split(' | ', 1)
+                        # Write in the correct order: customer first, then chainguard
+                        writer.writerow([customer_img.strip(), chainguard_img.strip()])
+                    else:
+                        # Fallback for unexpected format
+                        writer.writerow([failed_row, ''])
+            
+            logger.info(f"Failed image pairs written to: {output_file}")
+            logger.info(f"Total failed pairs: {len(self.failed_rows)}")
+            
+        except Exception as e:
+            logger.error(f"Failed to write failed pairs CSV: {e}")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -2183,6 +2217,9 @@ Examples:
   
   # With cache control:
   %(prog)s -s image_pairs.csv -o report.html --cache-ttl 48 --cache-dir ./my_cache
+  
+  # With failed pairs output:
+  %(prog)s -s image_pairs.csv -o report.html --failed-pairs-output failed_images.csv
 
 File Format:
   CSV: Customer_Image,Chainguard_Image
@@ -2225,6 +2262,8 @@ Registry Fallback:
                        help='Disable caching and rescan all images')
     parser.add_argument('--clear-cache', action='store_true',
                        help='Clear existing cache before starting')
+    parser.add_argument('--failed-pairs-output', 
+                       help='Output CSV file path for failed image pairs')
     
     args = parser.parse_args()
     
@@ -2268,6 +2307,10 @@ Registry Fallback:
     
     # Print detailed failure summary with troubleshooting tips
     scanner.print_failure_summary()
+    
+    # Write failed pairs to CSV if requested
+    if args.failed_pairs_output and scanner.failed_rows:
+        scanner.write_failed_pairs_csv(args.failed_pairs_output)
     
     # Final success message
     total_pairs = len(scan_results) + len(scanner.failed_rows)
