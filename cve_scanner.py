@@ -71,6 +71,8 @@ class CVEScanner:
         self.cache_dir = Path(cache_dir)
         self.cache_ttl_hours = cache_ttl_hours
         self.cache_file = self.cache_dir / "scan_cache.json"
+        self.completed_pairs = 0
+        self.total_pairs = 0
         self._setup_cache()
     
     def _setup_cache(self):
@@ -285,9 +287,13 @@ class CVEScanner:
             if result.returncode != 0:
                 # If scan failed and retry is enabled, try fallback strategies
                 if retry:
+                    # Log initial failure as warning (not error yet)
+                    error_type, user_friendly_msg = self._categorize_scan_error(result.stderr, image_name)
+                    logger.warning(f"[{error_type}] Initial scan failed for {image_name}, trying fallback strategies...")
+                    
                     # Strategy 1: Try with :latest tag if not already using it
                     if not image_name.endswith(':latest'):
-                        logger.info(f"Initial scan failed for {image_name}, retrying with :latest tag")
+                        logger.info(f"Retrying {image_name} with :latest tag")
                         # If image has no tag, add :latest; if it has a tag, replace with :latest
                         if ':' in image_name:
                             base_image = image_name.split(':')[0]
@@ -326,8 +332,9 @@ class CVEScanner:
                                 original_image_name=original_image_name
                             )
                 
+                # All fallback strategies failed - log as final ERROR
                 error_type, user_friendly_msg = self._categorize_scan_error(result.stderr, image_name)
-                logger.error(f"[{error_type}] {user_friendly_msg}")
+                logger.error(f"[{error_type}] All retry attempts failed for {image_name}: {user_friendly_msg}")
                 # Log detailed error for debugging
                 if result.stderr.strip():
                     logger.debug(f"Detailed error for {image_name}: {result.stderr}")
@@ -369,9 +376,11 @@ class CVEScanner:
         except subprocess.TimeoutExpired:
             # If scan timed out and retry is enabled, try fallback strategies
             if retry:
+                logger.warning(f"[TIMEOUT] Initial scan timeout for {image_name}, trying fallback strategies...")
+                
                 # Strategy 1: Try with :latest tag if not already using it
                 if not image_name.endswith(':latest'):
-                    logger.info(f"Scan timeout for {image_name}, retrying with :latest tag")
+                    logger.info(f"Retrying {image_name} with :latest tag after timeout")
                     # If image has no tag, add :latest; if it has a tag, replace with :latest
                     if ':' in image_name:
                         base_image = image_name.split(':')[0]
@@ -411,7 +420,7 @@ class CVEScanner:
                         )
             
             user_friendly_msg = f"Scan timeout for '{image_name}'. The image may be very large or the network connection is slow."
-            logger.error(f"[TIMEOUT] {user_friendly_msg}")
+            logger.error(f"[TIMEOUT] All retry attempts failed for {image_name}: {user_friendly_msg}")
             self.failed_scans.append(original_image_name)
             return VulnerabilityData(
                 image_name=image_name,
@@ -453,7 +462,11 @@ class CVEScanner:
     
     def scan_image_pair(self, image_pair: ImagePair) -> ScanResult:
         """Scan both images in a pair and return combined result"""
-        logger.info(f"Scanning pair: {image_pair.chainguard_image} vs {image_pair.customer_image}")
+        # Get current progress for logging
+        with self._lock:
+            current_progress = f"[{self.completed_pairs + 1}/{self.total_pairs}]"
+        
+        logger.info(f"{current_progress} Scanning pair: {image_pair.chainguard_image} vs {image_pair.customer_image}")
         
         # Scan both images
         chainguard_result = self.scan_image(image_pair.chainguard_image)
@@ -471,8 +484,10 @@ class CVEScanner:
             
             with self._lock:
                 self.failed_rows.append(f"{image_pair.chainguard_image} | {image_pair.customer_image}")
+                self.completed_pairs += 1
+                progress = f"[{self.completed_pairs}/{self.total_pairs}]"
             
-            logger.warning(f"Row failed - {error_msg}")
+            logger.warning(f"{progress} Row failed - {error_msg}")
             
             return ScanResult(
                 image_pair=image_pair,
@@ -482,7 +497,12 @@ class CVEScanner:
                 error_message=error_msg
             )
         
-        logger.info(f"Row completed successfully: {chainguard_result.total_vulnerabilities} vs {customer_result.total_vulnerabilities} vulnerabilities")
+        # Update progress counter
+        with self._lock:
+            self.completed_pairs += 1
+            progress = f"[{self.completed_pairs}/{self.total_pairs}]"
+        
+        logger.info(f"{progress} Row completed successfully: {chainguard_result.total_vulnerabilities} vs {customer_result.total_vulnerabilities} vulnerabilities")
         
         return ScanResult(
             image_pair=image_pair,
@@ -493,6 +513,8 @@ class CVEScanner:
     
     def scan_image_pairs_parallel(self, image_pairs: List[ImagePair], max_workers: int = 4) -> List[ScanResult]:
         """Scan multiple image pairs in parallel"""
+        self.total_pairs = len(image_pairs)
+        self.completed_pairs = 0
         logger.info(f"Scanning {len(image_pairs)} image pairs with {max_workers} workers")
         
         successful_results = []
@@ -514,10 +536,13 @@ class CVEScanner:
                     else:
                         logger.warning(f"Skipping failed row: {pair.chainguard_image} | {pair.customer_image}")
                 except Exception as e:
-                    error_msg = f"Unexpected error scanning pair {pair.chainguard_image} | {pair.customer_image}: {e}"
-                    logger.error(error_msg)
                     with self._lock:
+                        self.completed_pairs += 1
+                        progress = f"[{self.completed_pairs}/{self.total_pairs}]"
                         self.failed_rows.append(f"{pair.chainguard_image} | {pair.customer_image}")
+                    
+                    error_msg = f"Unexpected error scanning pair {pair.chainguard_image} | {pair.customer_image}: {e}"
+                    logger.error(f"{progress} {error_msg}")
         
         logger.info(f"Successfully scanned {len(successful_results)} of {len(image_pairs)} pairs")
         return successful_results
