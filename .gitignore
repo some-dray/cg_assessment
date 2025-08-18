@@ -1,3 +1,4 @@
 CLAUDE.md
 .DS_Store
 customer
+.cache/scan_cache.json

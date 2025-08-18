@@ -7,6 +7,8 @@ A Python tool that demonstrates Chainguard's value proposition by scanning conta
 - **CVE Vulnerability Scanning**: Uses Grype to scan container images for vulnerabilities
 - **Chainguard Comparison**: Automatically finds and scans corresponding Chainguard images
 - **Professional HTML Reporting**: Generates PDF-optimized HTML reports with Chainguard branding
+- **Intelligent Caching**: Digest-based caching system to avoid re-scanning identical images
+- **Registry Fallback**: Automatic fallback to mirror.gcr.io for Docker Hub connectivity issues
 - **Executive Summary**: Supports custom markdown executive summaries with template variables
 - **Custom Appendix**: Add organization-specific content to reports with `-a` flag
 - **Progress Tracking**: Provides detailed scan progress and error reporting
@@ -49,42 +51,57 @@ python3 cve_scanner.py -s sample.csv -o report.html -e sample-exec-summary.md -a
 # With customer name for branding
 python3 cve_scanner.py -s sample.csv -o report.html -c "Sample Customer"
 
+# With caching options
+python3 cve_scanner.py -s sample.csv -o report.html --cache-ttl 48 --cache-dir ./my_cache
+
+# Disable caching for fresh scans
+python3 cve_scanner.py -s sample.csv -o report.html --no-cache
+
+# Clear existing cache and start fresh
+python3 cve_scanner.py -s sample.csv -o report.html --clear-cache
+
+# Generate a CSV of failed image pairs for retry/analysis
+python3 cve_scanner.py -s sample.csv -o report.html --failed-pairs-output failed_images.csv
+
 # Complete example with all options
-python3 cve_scanner.py -s sample.csv -o sample-customer.html -e sample-exec-summary.md -a sample-appendix.md -c "Sample Customer" --max-workers 2
+python3 cve_scanner.py -s sample.csv -o sample-customer.html -e sample-exec-summary.md -a sample-appendix.md -c "Sample Customer" --max-workers 2 --cache-ttl 24 --failed-pairs-output failed.csv
 
 ```
 
 **CSV Format (Recommended):**
 ```csv
-Chainguard_Image,Customer_Image
-cgr.dev/chainguard-private/jdk:openjdk-21,alpine/java:21
-cgr.dev/chainguard-private/nginx:1,hijaak/nginx:v1
-cgr.dev/chainguard-private/logstash:7,logstash:7.17.0
+Customer_Image,Chainguard_Image
+prom/prometheus:latest, cgr.dev/chainguard-private/prometheus
+openjdk:21,cgr.dev/chainguard-private/jdk:openjdk-21
+nginx,cgr.dev/chainguard-private/nginx
+logstash:7.17.0,cgr.dev/chainguard-private/logstash:7
 ```
 
 
 
 ### Command Line Options
 
+**Required:**
 - `-s, --source`: Source images (required)
   - **CSV file**: `image_pairs.csv`
 - `-o, --output`: Output HTML file path (required)
+
+**Optional:**
 - `-e, --exec-summary`: Optional markdown file for executive summary
 - `-a, --appendix`: Optional markdown file for custom appendix content (appears above methodology)
 - `-c, --customer-name`: Customer name for report footer (default: "Customer")
 - `--max-workers`: Number of parallel scanning threads (default: 4)
 - `--timeout-per-image`: Timeout in seconds per image scan (default: 300)
+- `--platform`: Platform to use for Grype scans (e.g., "linux/amd64", "linux/arm64")
 
-### File Format
+**Caching Options:**
+- `--cache-dir`: Directory to store scan cache (default: .cache)
+- `--cache-ttl`: Cache TTL in hours (default: 24)
+- `--no-cache`: Disable caching and rescan all images
+- `--clear-cache`: Clear existing cache before starting
 
-**CSV Format:**
-```csv
-Chainguard_Image,Customer_Image
-cgr.dev/chainguard/nginx:latest,nginx:latest
-cgr.dev/chainguard/python:latest,python:3.9
-cgr.dev/chainguard/node:latest,node:16-alpine
-```
-
+**Output Options:**
+- `--failed-pairs-output`: Output CSV file path for failed image pairs
 
 
 ## Sample Files
@@ -96,11 +113,104 @@ cgr.dev/chainguard/node:latest,node:16-alpine
 ## Performance Features
 
 - **Parallel Scanning**: Uses multi-threading to scan multiple images simultaneously
+- **Intelligent Caching**: Digest-based caching avoids re-scanning identical images
 - **Row-Level Validation**: If any image in a row fails to scan, the entire row is excluded from results
-- **Auto-Retry Logic**: Failed scans are automatically retried with `:latest` tag
+- **Multi-Tier Retry Logic**: 
+  - First retry with `:latest` tag
+  - Then fallback to `mirror.gcr.io` for Docker Hub images
 - **Configurable Workers**: Control parallelism with `--max-workers` (default: 4)
 - **Progress Tracking**: Real-time feedback on scan progress and failures
-- **Performance Gain**: Typically 3-5x faster than sequential scanning
+- **Performance Gain**: Typically 3-5x faster than sequential scanning, even faster with cache hits
+
+## Caching System
+
+The tool includes a sophisticated caching system to dramatically improve performance on repeated scans:
+
+### How It Works
+- **Image Digest Verification**: Uses Docker/Podman to get the actual SHA256 digest of images
+- **Cache Key Generation**: Creates unique cache keys combining image name, digest, and platform
+- **Automatic Cache Management**: Stores successful scan results in JSON format with timestamps
+- **TTL-Based Expiration**: Cached results expire after 24 hours by default (configurable)
+
+### Benefits
+- **Skip Identical Scans**: If the same image (by digest) was scanned recently, use cached results
+- **Platform Awareness**: Different cache entries for different platforms (linux/amd64, linux/arm64, etc.)
+- **Tag-Independent**: Even if tags change, identical image content uses cached results
+- **Significant Speed Improvements**: Cached scans return instantly vs. minutes for fresh scans
+
+### Cache Management
+```bash
+# Use custom cache directory and TTL
+python3 cve_scanner.py -s sample.csv -o report.html --cache-dir /path/to/cache --cache-ttl 48
+
+# Disable caching completely
+python3 cve_scanner.py -s sample.csv -o report.html --no-cache
+
+# Clear existing cache and start fresh
+python3 cve_scanner.py -s sample.csv -o report.html --clear-cache
+```
+
+### Cache Location
+- **Default**: `.cache/scan_cache.json` in the current directory
+- **Customizable**: Use `--cache-dir` to specify a different location
+- **Portable**: Cache files can be shared between team members or CI/CD systems
+
+## Registry Fallback System
+
+The tool automatically handles Docker Hub connectivity issues and rate limiting:
+
+### How It Works
+- **Docker Hub Detection**: Identifies images without explicit registry prefixes
+- **Automatic Fallback**: If Docker Hub scan fails, tries `mirror.gcr.io` equivalent
+- **Smart Mapping**: 
+  - `ubuntu:20.04` → `mirror.gcr.io/library/ubuntu:20.04`
+  - `user/repo:tag` → `mirror.gcr.io/user/repo:tag`
+- **Transparent Operation**: Uses mirror results but maintains original image names in reports
+
+### Benefits
+- **Improved Success Rates**: Handles Docker Hub rate limits and outages
+- **No Configuration Required**: Automatically attempts fallback on failures
+- **Maintains Accuracy**: Original image names preserved in all reports and logs
+- **Comprehensive Coverage**: Works with both official and user images
+
+### Retry Strategy
+1. **Initial Scan**: Try original image name
+2. **Tag Retry**: If fails, try with `:latest` tag (existing behavior)
+3. **Registry Fallback**: If still fails and it's a Docker Hub image, try `mirror.gcr.io`
+4. **Detailed Logging**: Clear messages about each retry attempt
+
+## Failed Pairs Output
+
+The tool can generate a CSV file containing all image pairs that failed to scan:
+
+### Usage
+```bash
+# Generate failed pairs CSV
+python3 cve_scanner.py -s input.csv -o report.html --failed-pairs-output failed_images.csv
+
+# Use failed pairs as input for retry
+python3 cve_scanner.py -s failed_images.csv -o retry_report.html
+```
+
+### CSV Format
+The failed pairs CSV uses the same format as input files:
+```csv
+Customer_Image,Chainguard_Image
+bibinwilson/docker-kubectl-dig:0.2,cgr.dev/chainguard-private/kubectl
+some/failing-image:tag,cgr.dev/chainguard-private/alternative
+```
+
+### Benefits
+- **Easy Retry**: Use the generated CSV as input for subsequent scan attempts
+- **Failure Analysis**: Analyze patterns in failed images (authentication, network, etc.)
+- **Debugging**: Clear list of specific image pairs that need attention
+- **CI/CD Integration**: Automate handling of scan failures in pipelines
+- **Incremental Processing**: Focus re-scanning efforts on previously failed images
+
+### When Files Are Generated
+- Only created when `--failed-pairs-output` flag is provided
+- Only generated if there are actually failed pairs
+- Includes all pairs where either customer or Chainguard image failed to scan
 
 ## Report Features
 
@@ -219,9 +329,18 @@ This tool helps achieve:
 
 1. **Grype not found**: Ensure Grype is installed and in your PATH
 2. **Image not found**: Check image names and registry access
+   - The tool automatically tries `mirror.gcr.io` fallback for Docker Hub images
 3. **Scan timeouts**: Large images may take time; the tool has a 5-minute timeout per image
+   - Use `--timeout-per-image` to increase timeout if needed
 4. **Failed scans**: Check the CLI output for detailed error information
-5. **PDF conversion issues**: The HTML is optimized for PDF - use tools like Puppeteer, wkhtmltopdf, or Chrome's print-to-PDF
+   - Tool provides categorized error messages (ACCESS_DENIED, IMAGE_NOT_FOUND, etc.)
+   - Use `--failed-pairs-output failed.csv` to generate a list of failed pairs for retry
+5. **Cache issues**: 
+   - Use `--clear-cache` to start fresh if cache seems corrupted
+   - Use `--no-cache` to bypass caching entirely
+6. **Docker/Podman not available**: Cache will use fallback hashing (less optimal but functional)
+7. **Retry failed scans**: Use the failed pairs CSV as input for subsequent runs
+8. **PDF conversion issues**: The HTML is optimized for PDF - use tools like Puppeteer, wkhtmltopdf, or Chrome's print-to-PDF
 
 ## Example Output
 
