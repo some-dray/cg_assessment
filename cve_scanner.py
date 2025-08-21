@@ -745,7 +745,7 @@ class CVEScanner:
         </div>
 
         <!-- CVE Reduction Metrics -->
-        <div class="image-comparison-section no-break">
+        <div class="image-comparison-section no-break cve-reduction-section">
             <h2>CVE Reduction Analysis</h2>
             <div style="text-align: center; margin-bottom: 30px;">
                 <div class="total-box reduction-box" style="display: block; margin: 0 auto 20px auto; width: 300px;">
@@ -1488,7 +1488,12 @@ code {
     page-break-before: avoid;
 }
 
-/* Add page break before Images Scanned section */
+/* CVE Reduction section should start on new page */
+.cve-reduction-section {
+    page-break-before: always;
+}
+
+/* Images Scanned section - keep everything together */
 .images-scanned-section {
     margin-top: 40px;
     margin-bottom: 40px;
@@ -1498,7 +1503,10 @@ code {
     border-radius: 12px;
     box-shadow: 0 4px 6px -1px rgba(20, 0, 61, 0.08);
     page-break-inside: avoid;
-    page-break-before: always;
+}
+
+.images-scanned-section h2 {
+    page-break-after: avoid;
 }
 
 .image-comparison-section h2 {
@@ -1583,6 +1591,7 @@ code {
     overflow: visible;
     margin: 30px 0;
     page-break-inside: avoid;
+    page-break-before: avoid;
     break-inside: avoid;
     border-radius: 12px;
     box-shadow: 0 8px 16px -4px rgba(20, 0, 61, 0.12);
@@ -2044,6 +2053,7 @@ em {
     border: 2px solid var(--cg-light);
     border-radius: 8px;
     page-break-inside: avoid;
+    page-break-after: avoid;
 }
 
 .vulnerability-legend h3 {
@@ -2084,7 +2094,9 @@ em {
 @media print {
     .vulnerability-legend {
         page-break-inside: avoid;
+        page-break-after: avoid;
         break-inside: avoid;
+        break-after: avoid;
         margin: 15px 0 20px 0;
         padding: 12px 16px;
     }
