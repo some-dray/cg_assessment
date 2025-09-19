@@ -16,10 +16,11 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 import csv
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 import threading
 import hashlib
 import time
+import requests
 try:
     import markdown
     MARKDOWN_AVAILABLE = True
@@ -63,16 +64,20 @@ class CVEScanner:
     SEVERITY_ORDER = ['Critical', 'High', 'Medium', 'Low', 'Negligible', 'Unknown']
     CHAINGUARD_LOGO_URL = "Linky_White.png"
     
-    def __init__(self, platform=None, cache_dir=".cache", cache_ttl_hours=24):
+    def __init__(self, platform=None, cache_dir=".cache", cache_ttl_hours=24, timeout_per_image=300, check_fresh_images=True):
         self.failed_scans = []
         self.failed_rows = []
         self._lock = threading.Lock()
         self.platform = platform
         self.cache_dir = Path(cache_dir)
         self.cache_ttl_hours = cache_ttl_hours
+        self.timeout_per_image = timeout_per_image
+        self.check_fresh_images = check_fresh_images
         self.cache_file = self.cache_dir / "scan_cache.json"
         self.completed_pairs = 0
         self.total_pairs = 0
+        # Add semaphore to limit concurrent Grype scans (max 2 concurrent)
+        self._grype_semaphore = threading.Semaphore(2)
         self._setup_cache()
     
     def _setup_cache(self):
@@ -94,11 +99,69 @@ class CVEScanner:
         with open(self.cache_file, 'w') as f:
             json.dump(cache_data, f, indent=2)
     
-    def _get_image_digest(self, image_name: str) -> Optional[str]:
-        """Get image digest using docker or podman"""
+    def _get_remote_digest(self, image_name: str) -> Optional[str]:
+        """Get remote image digest via registry API (fast, no pull required)"""
+        try:
+            # Parse image components
+            registry = "registry-1.docker.io"
+            namespace = "library"
+            repo_tag = image_name
+
+            # Handle different image name formats
+            if '/' in image_name:
+                if image_name.count('/') == 1:
+                    # user/repo:tag format
+                    namespace, repo_tag = image_name.split('/', 1)
+                elif image_name.count('/') >= 2:
+                    # registry.com/user/repo:tag format
+                    parts = image_name.split('/', 2)
+                    if '.' in parts[0] or ':' in parts[0]:
+                        registry = parts[0]
+                        if len(parts) > 2:
+                            namespace, repo_tag = parts[1], parts[2]
+                        else:
+                            namespace, repo_tag = "library", parts[1]
+                    else:
+                        namespace, repo_tag = parts[0], parts[1]
+
+            # Split repo and tag
+            if ':' in repo_tag:
+                repo, tag = repo_tag.rsplit(':', 1)
+            else:
+                repo, tag = repo_tag, "latest"
+
+            # Handle Docker Hub API specifics
+            if registry == "registry-1.docker.io":
+                if namespace == "library":
+                    url = f"https://registry-1.docker.io/v2/library/{repo}/manifests/{tag}"
+                else:
+                    url = f"https://registry-1.docker.io/v2/{namespace}/{repo}/manifests/{tag}"
+            else:
+                url = f"https://{registry}/v2/{namespace}/{repo}/manifests/{tag}"
+
+            # Make API request
+            headers = {
+                'Accept': 'application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json'
+            }
+
+            response = requests.head(url, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                digest = response.headers.get('Docker-Content-Digest')
+                if digest:
+                    logger.debug(f"Remote digest for {image_name}: {digest}")
+                    return digest
+
+        except Exception as e:
+            logger.debug(f"Could not get remote digest for {image_name}: {e}")
+
+        return None
+
+    def _get_local_digest(self, image_name: str) -> Optional[str]:
+        """Get local image digest without pulling"""
         for cmd in ['docker', 'podman']:
             try:
-                result = subprocess.run([cmd, 'inspect', '--format={{.RepoDigests}}', image_name], 
+                result = subprocess.run([cmd, 'inspect', '--format={{.RepoDigests}}', image_name],
                                       capture_output=True, text=True, timeout=30)
                 if result.returncode == 0:
                     digest_info = result.stdout.strip()
@@ -106,27 +169,80 @@ class CVEScanner:
                     if '@sha256:' in digest_info:
                         digest = digest_info.split('@sha256:')[1].split(']')[0].split()[0]
                         return f"sha256:{digest}"
-                    else:
-                        # If no digest available, pull image to get digest
-                        logger.info(f"No digest found for {image_name}, attempting to pull...")
-                        pull_result = subprocess.run([cmd, 'pull', image_name], 
-                                                   capture_output=True, text=True, timeout=300)
-                        if pull_result.returncode == 0:
-                            # Try inspect again
-                            result = subprocess.run([cmd, 'inspect', '--format={{.RepoDigests}}', image_name], 
-                                                  capture_output=True, text=True, timeout=30)
-                            if result.returncode == 0 and '@sha256:' in result.stdout:
-                                digest_info = result.stdout.strip()
-                                digest = digest_info.split('@sha256:')[1].split(']')[0].split()[0]
-                                return f"sha256:{digest}"
-                        # Fallback: use image ID as identifier
-                        id_result = subprocess.run([cmd, 'inspect', '--format={{.Id}}', image_name], 
-                                                 capture_output=True, text=True, timeout=30)
-                        if id_result.returncode == 0:
-                            return id_result.stdout.strip()
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 continue
-        
+        return None
+
+    def _ensure_fresh_image(self, image_name: str) -> bool:
+        """Ensure we have the latest version of the image. Returns True if image was updated."""
+        try:
+            # Get remote digest first (fast API call)
+            remote_digest = self._get_remote_digest(image_name)
+            if not remote_digest:
+                logger.debug(f"Could not get remote digest for {image_name}, skipping freshness check")
+                return False
+
+            # Get local digest
+            local_digest = self._get_local_digest(image_name)
+
+            # If no local image or digests differ, pull the image
+            if not local_digest or local_digest != remote_digest:
+                logger.info(f"Pulling fresh version of {image_name} (remote digest: {remote_digest[:19]}...)")
+                for cmd in ['docker', 'podman']:
+                    try:
+                        pull_result = subprocess.run([cmd, 'pull', image_name],
+                                                   capture_output=True, text=True, timeout=300)
+                        if pull_result.returncode == 0:
+                            logger.debug(f"Successfully pulled {image_name}")
+                            return True
+                    except (subprocess.TimeoutExpired, FileNotFoundError):
+                        continue
+
+                logger.warning(f"Failed to pull {image_name}")
+                return False
+            else:
+                logger.debug(f"Local image {image_name} is up to date")
+                return False
+
+        except Exception as e:
+            logger.debug(f"Error ensuring fresh image for {image_name}: {e}")
+            return False
+
+    def _get_image_digest(self, image_name: str, ensure_fresh: bool = None) -> Optional[str]:
+        """Get image digest, optionally ensuring we have the latest version"""
+        if ensure_fresh is None:
+            ensure_fresh = self.check_fresh_images
+
+        if ensure_fresh:
+            self._ensure_fresh_image(image_name)
+
+        # Now get the local digest (after potential pull)
+        local_digest = self._get_local_digest(image_name)
+        if local_digest:
+            return local_digest
+
+        # Fallback: try to pull if we don't have local digest
+        for cmd in ['docker', 'podman']:
+            try:
+                logger.info(f"No digest found for {image_name}, attempting to pull...")
+                pull_result = subprocess.run([cmd, 'pull', image_name],
+                                           capture_output=True, text=True, timeout=300)
+                if pull_result.returncode == 0:
+                    # Try inspect again
+                    result = subprocess.run([cmd, 'inspect', '--format={{.RepoDigests}}', image_name],
+                                          capture_output=True, text=True, timeout=30)
+                    if result.returncode == 0 and '@sha256:' in result.stdout:
+                        digest_info = result.stdout.strip()
+                        digest = digest_info.split('@sha256:')[1].split(']')[0].split()[0]
+                        return f"sha256:{digest}"
+                # Fallback: use image ID as identifier
+                id_result = subprocess.run([cmd, 'inspect', '--format={{.Id}}', image_name],
+                                         capture_output=True, text=True, timeout=30)
+                if id_result.returncode == 0:
+                    return id_result.stdout.strip()
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+
         # Fallback: create a hash from image name and current time (not ideal but better than nothing)
         logger.debug(f"Could not get digest for {image_name}, using fallback hash (docker/podman not available or image not accessible)")
         return hashlib.sha256(f"{image_name}:{int(time.time() / 3600)}".encode()).hexdigest()[:16]
@@ -277,12 +393,13 @@ class CVEScanner:
         original_image_name = image_name
         
         try:
-            # Run grype scan with JSON output
-            cmd = ['grype', '-o', 'json']
-            if self.platform:
-                cmd.extend(['--platform', self.platform])
-            cmd.append(image_name)
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            # Run grype scan with JSON output (limit concurrent scans)
+            with self._grype_semaphore:
+                cmd = ['grype', '-o', 'json']
+                if self.platform:
+                    cmd.extend(['--platform', self.platform])
+                cmd.append(image_name)
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout_per_image)
             
             if result.returncode != 0:
                 # If scan failed and retry is enabled, try fallback strategies
@@ -291,8 +408,8 @@ class CVEScanner:
                     error_type, user_friendly_msg = self._categorize_scan_error(result.stderr, image_name)
                     logger.warning(f"[{error_type}] Initial scan failed for {image_name}, trying fallback strategies...")
                     
-                    # Strategy 1: Try with :latest tag if not already using it
-                    if not image_name.endswith(':latest'):
+                    # Strategy 1: Try with :latest tag if not already using it (skip for digest-based images)
+                    if not image_name.endswith(':latest') and '@sha256:' not in image_name:
                         logger.info(f"Retrying {image_name} with :latest tag")
                         # If image has no tag, add :latest; if it has a tag, replace with :latest
                         if ':' in image_name:
@@ -378,8 +495,8 @@ class CVEScanner:
             if retry:
                 logger.warning(f"[TIMEOUT] Initial scan timeout for {image_name}, trying fallback strategies...")
                 
-                # Strategy 1: Try with :latest tag if not already using it
-                if not image_name.endswith(':latest'):
+                # Strategy 1: Try with :latest tag if not already using it (skip for digest-based images)
+                if not image_name.endswith(':latest') and '@sha256:' not in image_name:
                     logger.info(f"Retrying {image_name} with :latest tag after timeout")
                     # If image has no tag, add :latest; if it has a tag, replace with :latest
                     if ':' in image_name:
@@ -526,23 +643,36 @@ class CVEScanner:
                 for pair in image_pairs
             }
             
-            # Collect results as they complete
-            for future in as_completed(future_to_pair):
-                pair = future_to_pair[future]
-                try:
-                    result = future.result()
-                    if result.scan_successful:
-                        successful_results.append(result)
-                    else:
-                        logger.warning(f"Skipping failed row: {pair.chainguard_image} | {pair.customer_image}")
-                except Exception as e:
-                    with self._lock:
-                        self.completed_pairs += 1
-                        progress = f"[{self.completed_pairs}/{self.total_pairs}]"
-                        self.failed_rows.append(f"{pair.chainguard_image} | {pair.customer_image}")
-                    
-                    error_msg = f"Unexpected error scanning pair {pair.chainguard_image} | {pair.customer_image}: {e}"
-                    logger.error(f"{progress} {error_msg}")
+            # Collect results as they complete, with timeout to prevent indefinite hanging
+            # Use a reasonable timeout that allows for parallel processing
+            # Assume worst case: all jobs run serially with 2x timeout plus buffer
+            total_timeout = min((self.timeout_per_image * 2 + 60) * len(image_pairs) // max_workers, 3600)  # Cap at 1 hour
+            try:
+                for future in as_completed(future_to_pair, timeout=total_timeout):
+                    pair = future_to_pair[future]
+                    try:
+                        result = future.result()
+                        if result.scan_successful:
+                            successful_results.append(result)
+                        else:
+                            logger.warning(f"Skipping failed row: {pair.chainguard_image} | {pair.customer_image}")
+                    except Exception as e:
+                        with self._lock:
+                            self.completed_pairs += 1
+                            progress = f"[{self.completed_pairs}/{self.total_pairs}]"
+                            self.failed_rows.append(f"{pair.chainguard_image} | {pair.customer_image}")
+                        
+                        error_msg = f"Unexpected error scanning pair {pair.chainguard_image} | {pair.customer_image}: {e}"
+                        logger.error(f"{progress} {error_msg}")
+            except TimeoutError:
+                logger.error(f"Timeout waiting for {len(future_to_pair)} scanning jobs to complete after {total_timeout} seconds")
+                # Cancel any remaining futures and mark them as failed
+                for future, pair in future_to_pair.items():
+                    if not future.done():
+                        future.cancel()
+                        with self._lock:
+                            self.failed_rows.append(f"{pair.chainguard_image} | {pair.customer_image}")
+                        logger.warning(f"Cancelled stuck scan job: {pair.chainguard_image} | {pair.customer_image}")
         
         logger.info(f"Successfully scanned {len(successful_results)} of {len(image_pairs)} pairs")
         return successful_results
@@ -558,21 +688,50 @@ class CVEScanner:
         
         with open(file_path, 'r') as f:
             csv_reader = csv.reader(f)
-            for line_num, row in enumerate(csv_reader, 1):
+            rows = list(csv_reader)
+            
+            if not rows:
+                logger.error("CSV file is empty")
+                return []
+            
+            # Determine if first row is a header and column order
+            first_row = rows[0]
+            if len(first_row) < 2:
+                logger.error("CSV must have at least 2 columns")
+                return []
+            
+            col1 = str(first_row[0]).strip().lower()
+            col2 = str(first_row[1]).strip().lower()
+            
+            # Check if first row is a header
+            header_keywords = ['customer_image', 'chainguard_image', 'image_name', 'customer image', 'chainguard image']
+            is_header = any(keyword in col1 for keyword in header_keywords) or \
+                       any(keyword in col2 for keyword in header_keywords)
+            
+            # Determine column order
+            customer_first = True  # Default assumption
+            if is_header:
+                # Use header to determine column order
+                if 'chainguard' in col1 or ('customer' in col2 and 'chainguard' not in col2):
+                    customer_first = False
+                data_start = 1  # Skip header row
+            else:
+                # No header - use heuristics to detect column order
+                # Chainguard images typically start with cgr.dev
+                if first_row[0].strip().startswith('cgr.dev') and not first_row[1].strip().startswith('cgr.dev'):
+                    customer_first = False
+                elif first_row[1].strip().startswith('cgr.dev') and not first_row[0].strip().startswith('cgr.dev'):
+                    customer_first = True
+                # If both or neither start with cgr.dev, stick with default (customer first)
+                data_start = 0  # Process all rows as data
+            
+            logger.info(f"Parsing CSV with column order: {'customer, chainguard' if customer_first else 'chainguard, customer'}")
+            
+            # Process data rows
+            for line_num, row in enumerate(rows[data_start:], data_start + 1):
                 # Skip empty rows
                 if not row or len(row) == 0:
                     continue
-                
-                # Skip header row if it contains common header keywords (but not registry URLs)
-                if line_num == 1 and len(row) >= 2:
-                    col1 = str(row[0]).strip().lower()
-                    col2 = str(row[1]).strip().lower()
-                    
-                    # Only skip if it looks like actual headers, not registry URLs
-                    header_keywords = ['customer_image', 'chainguard_image', 'image_name', 'customer image', 'chainguard image']
-                    if any(keyword in col1 for keyword in header_keywords) or \
-                       any(keyword in col2 for keyword in header_keywords):
-                        continue
                 
                 # Skip comment rows (first cell starts with #)
                 if str(row[0]).strip().startswith('#'):
@@ -582,8 +741,13 @@ class CVEScanner:
                     logger.warning(f"CSV row {line_num}: Expected at least 2 columns, got {len(row)}. Skipping.")
                     continue
                 
-                customer_image = str(row[0]).strip()
-                chainguard_image = str(row[1]).strip()
+                # Assign columns based on detected order
+                if customer_first:
+                    customer_image = str(row[0]).strip()
+                    chainguard_image = str(row[1]).strip()
+                else:
+                    chainguard_image = str(row[0]).strip()
+                    customer_image = str(row[1]).strip()
                 
                 if chainguard_image and customer_image:
                     image_pairs.append(ImagePair(chainguard_image, customer_image))
@@ -801,14 +965,6 @@ class CVEScanner:
                         {self._generate_comparison_table_rows(image_pairs)}
                     </tbody>
                 </table>
-            </div>
-            <div class="table-legend">
-                <div class="legend-section">
-                    <p class="legend-note">
-                        <span class="legend-icon">*</span>
-                        Images marked with an asterisk were retried with the :latest tag after initial scan failure.
-                    </p>
-                </div>
             </div>
         </div>
 
@@ -2274,7 +2430,7 @@ Registry Fallback:
     parser.add_argument('--max-workers', type=int, default=4,
                        help='Maximum number of parallel scanning threads (default: 4)')
     parser.add_argument('--timeout-per-image', type=int, default=300,
-                       help='Timeout in seconds per image scan (default: 300)')
+                       help='Timeout in seconds per Grype vulnerability scan (default: 300)')
     parser.add_argument('-c', '--customer-name', 
                        help='Customer name for report footer (default: "Customer")')
     parser.add_argument('--platform', 
@@ -2287,6 +2443,8 @@ Registry Fallback:
                        help='Disable caching and rescan all images')
     parser.add_argument('--clear-cache', action='store_true',
                        help='Clear existing cache before starting')
+    parser.add_argument('--no-fresh-check', action='store_true',
+                       help='Skip checking for fresh image versions (faster but may use stale images)')
     parser.add_argument('--failed-pairs-output', 
                        help='Output CSV file path for failed image pairs')
     
@@ -2294,7 +2452,13 @@ Registry Fallback:
     
     # Initialize scanner with cache settings
     cache_ttl = 0 if args.no_cache else args.cache_ttl
-    scanner = CVEScanner(platform=args.platform, cache_dir=args.cache_dir, cache_ttl_hours=cache_ttl)
+    scanner = CVEScanner(
+        platform=args.platform,
+        cache_dir=args.cache_dir,
+        cache_ttl_hours=cache_ttl,
+        timeout_per_image=args.timeout_per_image,
+        check_fresh_images=not args.no_fresh_check
+    )
     
     # Handle cache clearing
     if args.clear_cache:
