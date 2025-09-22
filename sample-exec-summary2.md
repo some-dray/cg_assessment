@@ -12,7 +12,7 @@ A security assessment of {{images_scanned}} images currently in use at {{custome
 
 ### Business Impact
 
-- Enhanced Security Posture: Partnering with Chainguard enables a 98.9% reduction in vulnerabilities, allowing {{customer_name}} to deliver on its CVE remediation mandate. Furthermore, all images undergo automated functional and security testing including vulnerability scans, and malware checks above and beyond what other Linux Distributions do.
+- Enhanced Security Posture: Partnering with Chainguard enables a {{reduction_percentage}} reduction in vulnerabilities, allowing {{customer_name}} to deliver on its CVE remediation mandate. Furthermore, all images undergo automated functional and security testing including vulnerability scans, and malware checks above and beyond what other Linux Distributions do.
 - Compliance & Board Readiness: Chainguard delivers consistent, trusted open source across teams, accelerating compliance, meeting board-level goals and reducing dependency on exception workflows.
 - Operational Efficiency: With {{reduction_percentage}} fewer CVEs to track, patch, and manage, offloading CVE remediation to Chainguard frees engineers from low-value triage & exception workflows, increasing focus on innovation and delivery.
 
@@ -20,8 +20,4 @@ A security assessment of {{images_scanned}} images currently in use at {{custome
 
 Adopting Chainguard images as replacements will materially reduce vulnerabilities, streamline security operations, and improve developer efficiency across the {{customer_name}} platform.
 
-<br>
-<br>
-<br>
-<br>
 <br>
