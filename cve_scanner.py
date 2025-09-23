@@ -20,7 +20,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 import threading
 import hashlib
 import time
-import requests
 try:
     import markdown
     MARKDOWN_AVAILABLE = True
@@ -68,6 +67,9 @@ class CVEScanner:
         self.failed_scans = []
         self.failed_rows = []
         self._lock = threading.Lock()
+        self._auth_failure_flag = False
+        self._auth_failure_image = None
+        self._executor = None  # Store executor reference for cancellation
         self.platform = platform
         self.cache_dir = Path(cache_dir)
         self.cache_ttl_hours = cache_ttl_hours
@@ -100,60 +102,37 @@ class CVEScanner:
             json.dump(cache_data, f, indent=2)
     
     def _get_remote_digest(self, image_name: str) -> Optional[str]:
-        """Get remote image digest via registry API (fast, no pull required)"""
+        """Get remote image digest using docker/podman manifest inspect"""
         try:
-            # Parse image components
-            registry = "registry-1.docker.io"
-            namespace = "library"
-            repo_tag = image_name
-
-            # Handle different image name formats
-            if '/' in image_name:
-                if image_name.count('/') == 1:
-                    # user/repo:tag format
-                    namespace, repo_tag = image_name.split('/', 1)
-                elif image_name.count('/') >= 2:
-                    # registry.com/user/repo:tag format
-                    parts = image_name.split('/', 2)
-                    if '.' in parts[0] or ':' in parts[0]:
-                        registry = parts[0]
-                        if len(parts) > 2:
-                            namespace, repo_tag = parts[1], parts[2]
+            for cmd in ['docker', 'podman']:
+                try:
+                    # Use manifest inspect to get remote digest
+                    result = subprocess.run([cmd, 'manifest', 'inspect', image_name],
+                                          capture_output=True, text=True, timeout=30)
+                    if result.returncode == 0:
+                        manifest_data = json.loads(result.stdout)
+                        # Extract digest from manifest
+                        if 'digest' in manifest_data:
+                            digest = manifest_data['digest']
+                        elif 'Digest' in manifest_data:
+                            digest = manifest_data['Digest']
                         else:
-                            namespace, repo_tag = "library", parts[1]
+                            # Calculate digest from manifest content
+                            digest = f"sha256:{hashlib.sha256(result.stdout.encode()).hexdigest()}"
+
+                        logger.debug(f"Remote digest for {image_name}: {digest}")
+                        return digest
                     else:
-                        namespace, repo_tag = parts[0], parts[1]
-
-            # Split repo and tag
-            if ':' in repo_tag:
-                repo, tag = repo_tag.rsplit(':', 1)
-            else:
-                repo, tag = repo_tag, "latest"
-
-            # Handle Docker Hub API specifics
-            if registry == "registry-1.docker.io":
-                if namespace == "library":
-                    url = f"https://registry-1.docker.io/v2/library/{repo}/manifests/{tag}"
-                else:
-                    url = f"https://registry-1.docker.io/v2/{namespace}/{repo}/manifests/{tag}"
-            else:
-                url = f"https://{registry}/v2/{namespace}/{repo}/manifests/{tag}"
-
-            # Make API request
-            headers = {
-                'Accept': 'application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.manifest.v1+json'
-            }
-
-            response = requests.head(url, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                digest = response.headers.get('Docker-Content-Digest')
-                if digest:
-                    logger.debug(f"Remote digest for {image_name}: {digest}")
-                    return digest
+                        # Check for auth errors
+                        if any(phrase in result.stderr.lower() for phrase in
+                               ['unauthorized', 'authentication required', 'access denied']):
+                            logger.debug(f"Authentication required for {image_name}")
+                            return None
+                except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+                    continue
 
         except Exception as e:
-            logger.debug(f"Could not get remote digest for {image_name}: {e}")
+            logger.debug(f"Error getting remote digest for {image_name}: {e}")
 
         return None
 
@@ -325,18 +304,19 @@ class CVEScanner:
     
     def scan_image(self, image_name: str) -> VulnerabilityData:
         """Scan a single image with Grype and return vulnerability data"""
+
         # Check cache first
         cached_result = self._get_cached_scan_result(image_name)
         if cached_result:
             return cached_result
-        
+
         # No cache hit, perform actual scan
         result = self._scan_image_with_retry(image_name, retry=True)
-        
+
         # Cache the result if scan was successful
         if result.scan_successful:
             self._cache_scan_result(image_name, result)
-        
+
         return result
     
     def _categorize_scan_error(self, error_output: str, image_name: str) -> Tuple[str, str]:
@@ -577,18 +557,61 @@ class CVEScanner:
                 original_image_name=original_image_name
             )
     
+    def _is_chainguard_image(self, image_name: str) -> bool:
+        """Check if an image is a Chainguard image (from cgr.dev)"""
+        return image_name.startswith('cgr.dev/')
+
+    def _validate_chainguard_access(self, image_name: str) -> bool:
+        """Validate access to Chainguard image by attempting a quick manifest check"""
+        logger.debug(f"Validating Chainguard access for: {image_name}")
+        try:
+            # Use docker/podman to check if we can access the image manifest
+            for cmd in ['docker', 'podman']:
+                try:
+                    logger.debug(f"Trying {cmd} manifest inspect for {image_name}")
+                    # Try to inspect the remote image manifest (this requires auth)
+                    result = subprocess.run([cmd, 'manifest', 'inspect', image_name],
+                                          capture_output=True, text=True, timeout=10)
+                    logger.debug(f"{cmd} manifest inspect returned code {result.returncode}")
+                    if result.stderr:
+                        logger.debug(f"{cmd} stderr: {result.stderr}")
+
+                    if result.returncode == 0:
+                        logger.debug(f"Access validated successfully for {image_name}")
+                        return True
+
+                    # Check for authentication errors in stderr
+                    if result.stderr:
+                        stderr_lower = result.stderr.lower()
+                        auth_phrases = ['unauthorized', 'authentication required', 'access denied']
+                        if any(phrase in stderr_lower for phrase in auth_phrases):
+                            logger.debug(f"Authentication error detected for {image_name}: {result.stderr}")
+                            return False
+                except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+                    logger.debug(f"{cmd} failed: {e}")
+                    continue
+
+            logger.debug(f"All validation attempts failed for {image_name}")
+            return False
+        except Exception as e:
+            logger.debug(f"Exception during validation for {image_name}: {e}")
+            # If we can't validate, assume access is denied for private images
+            return False
+
+
     def scan_image_pair(self, image_pair: ImagePair) -> ScanResult:
         """Scan both images in a pair and return combined result"""
         # Get current progress for logging
         with self._lock:
             current_progress = f"[{self.completed_pairs + 1}/{self.total_pairs}]"
-        
+
         logger.info(f"{current_progress} Scanning pair: {image_pair.chainguard_image} vs {image_pair.customer_image}")
-        
+
         # Scan both images
         chainguard_result = self.scan_image(image_pair.chainguard_image)
         customer_result = self.scan_image(image_pair.customer_image)
-        
+
+
         # Check if both scans were successful
         if not chainguard_result.scan_successful or not customer_result.scan_successful:
             error_messages = []
@@ -596,16 +619,16 @@ class CVEScanner:
                 error_messages.append(f"Chainguard image failed: {chainguard_result.error_message}")
             if not customer_result.scan_successful:
                 error_messages.append(f"Customer image failed: {customer_result.error_message}")
-            
+
             error_msg = "; ".join(error_messages)
-            
+
             with self._lock:
                 self.failed_rows.append(f"{image_pair.chainguard_image} | {image_pair.customer_image}")
                 self.completed_pairs += 1
                 progress = f"[{self.completed_pairs}/{self.total_pairs}]"
-            
+
             logger.warning(f"{progress} Row failed - {error_msg}")
-            
+
             return ScanResult(
                 image_pair=image_pair,
                 chainguard_data=chainguard_result,
@@ -633,13 +656,37 @@ class CVEScanner:
         self.total_pairs = len(image_pairs)
         self.completed_pairs = 0
         logger.info(f"Scanning {len(image_pairs)} image pairs with {max_workers} workers")
-        
+
+        # Pre-validate authentication for the first Chainguard image only
+        first_chainguard_image = None
+        for pair in image_pairs:
+            if self._is_chainguard_image(pair.chainguard_image):
+                first_chainguard_image = pair.chainguard_image
+                break
+
+        if first_chainguard_image:
+            logger.info(f"Validating Chainguard authentication with: {first_chainguard_image}")
+            if not self._validate_chainguard_access(first_chainguard_image):
+                logger.error(f"Authentication failed for Chainguard image: {first_chainguard_image}")
+                logger.error("Please authenticate with Chainguard using 'chainctl auth login' and re-run the scan.")
+                print(f"\nAuthentication Error: Access denied for Chainguard image '{first_chainguard_image}'")
+                print("Please authenticate with Chainguard Registry:")
+                print("   chainctl auth login")
+                print("   Then re-run this scan.")
+                print()
+                sys.exit(1)
+            logger.info("Chainguard authentication validated. Starting parallel scans...")
+        else:
+            logger.info("No Chainguard images found. Starting parallel scans...")
         successful_results = []
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Store executor reference for potential cancellation
+            self._executor = executor
+
             # Submit all scan jobs
             future_to_pair = {
-                executor.submit(self.scan_image_pair, pair): pair 
+                executor.submit(self.scan_image_pair, pair): pair
                 for pair in image_pairs
             }
             
@@ -661,7 +708,7 @@ class CVEScanner:
                             self.completed_pairs += 1
                             progress = f"[{self.completed_pairs}/{self.total_pairs}]"
                             self.failed_rows.append(f"{pair.chainguard_image} | {pair.customer_image}")
-                        
+
                         error_msg = f"Unexpected error scanning pair {pair.chainguard_image} | {pair.customer_image}: {e}"
                         logger.error(f"{progress} {error_msg}")
             except TimeoutError:
