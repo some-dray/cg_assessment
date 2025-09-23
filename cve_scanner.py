@@ -771,12 +771,14 @@ class CVEScanner:
             return []
     
     def load_exec_summary(self, exec_file: Optional[str], metrics: Dict = None, customer_name: Optional[str] = None) -> str:
+
+        default_exec_file = "sample-exec-summary2.md"
+
         """Load and convert markdown executive summary to HTML with data interpolation"""
-        if not exec_file or not os.path.isfile(exec_file):
+        if not exec_file:
             # Default summary with dynamic data if available
             if metrics:
                 return f"""
-                <h2>Executive Summary</h2>
                 <p>This report compares the vulnerability exposure between your current container images 
                 and Chainguard's hardened alternatives. Analysis of {self._format_number(metrics['images_scanned'])} image pairs 
                 shows a <strong>{metrics['reduction_percentage']}% overall CVE reduction</strong>, with 
@@ -786,7 +788,6 @@ class CVEScanner:
                 """
             else:
                 return """
-                <h2>Executive Summary</h2>
                 <p>This report compares the vulnerability exposure between your current container images 
                 and Chainguard's hardened alternatives. Chainguard images are built with security-first 
                 principles, utilizing minimal base images and eliminating unnecessary components to 
@@ -794,7 +795,7 @@ class CVEScanner:
                 """
         
         try:
-            with open(exec_file, 'r') as f:
+            with open(default_exec_file, 'r') as f:
                 md_content = f.read()
             
             # Replace template variables if metrics are provided
@@ -802,7 +803,7 @@ class CVEScanner:
                 md_content = self._interpolate_template_variables(md_content, metrics, customer_name)
             
             if MARKDOWN_AVAILABLE:
-                return markdown.markdown(md_content)
+                content = markdown.markdown(md_content)
             else:
                 # Simple markdown to HTML conversion for basic functionality
                 html_content = md_content
@@ -817,7 +818,15 @@ class CVEScanner:
                 html_content = f'<p>{html_content}</p>'
                 # Fix paragraph tags around lists
                 html_content = re.sub(r'<p>(<ul>.*?</ul>)</p>', r'\1', html_content, flags=re.DOTALL)
-                return html_content
+                content = html_content
+            
+            # Write custom executive summary to a file if provided
+            with open(exec_file, 'w') as f:
+                f.write(content)
+                f.close()
+            logger.info(f"Wrote custom executive summary to {exec_file}")
+            return content
+        
         except Exception as e:
             logger.warning(f"Failed to load executive summary: {e}")
             return "<p>Failed to load executive summary.</p>"
@@ -1126,7 +1135,7 @@ class CVEScanner:
             'total_customer_vulns': total_customer_vulns,
             'total_chainguard_vulns': total_chainguard_vulns,
             'total_reduction': total_reduction,
-            'reduction_percentage': round(reduction_percentage, 1),
+            'reduction_percentage': round(reduction_percentage, 2),
             'average_reduction_per_image': round(average_reduction_per_image, 1),
             'images_with_reduction': images_with_reduction,
             'images_scanned': len(scan_results)
@@ -1178,6 +1187,8 @@ class CVEScanner:
     
     def load_appendix(self, appendix_file: Optional[str], metrics: Dict = None, customer_name: Optional[str] = None) -> str:
         """Load and convert markdown appendix to HTML with data interpolation"""
+
+        default_appendix_file = "sample-appendix.md"
         
         # Default appendix content with strategic continuation headers for page breaks
         default_content = """
@@ -1223,12 +1234,12 @@ class CVEScanner:
                     </ul>
                 </div>"""
         
-        if not appendix_file or not os.path.isfile(appendix_file):
+        if not appendix_file:
             # Return only default content if no custom appendix
             return f"<div>{default_content}</div>"
         
         try:
-            with open(appendix_file, 'r') as f:
+            with open(default_appendix_file, 'r') as f:
                 md_content = f.read()
             
             # Replace template variables if metrics are provided
@@ -1253,6 +1264,12 @@ class CVEScanner:
                 # Fix paragraph tags around lists
                 html_content = re.sub(r'<p>(<ul>.*?</ul>)</p>', r'\1', html_content, flags=re.DOTALL)
                 custom_content = html_content
+
+            # Write new appendix file
+            with open(appendix_file, 'w') as f:
+                f.write(md_content)
+                f.close()
+                logger.info(f"Wrote custom appendix to {appendix_file}")
             
             # Combine custom content (above) with default content
             return f"<div>{custom_content}{default_content}</div>"
