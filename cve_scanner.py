@@ -63,7 +63,7 @@ class CVEScanner:
     SEVERITY_ORDER = ['Critical', 'High', 'Medium', 'Low', 'Negligible', 'Unknown']
     CHAINGUARD_LOGO_URL = "Linky_White.png"
     
-    def __init__(self, platform=None, cache_dir=".cache", cache_ttl_hours=24, timeout_per_image=300, check_fresh_images=True):
+    def __init__(self, platform=None, cache_dir=".cache", timeout_per_image=300, check_fresh_images=True):
         self.failed_scans = []
         self.failed_rows = []
         self._lock = threading.Lock()
@@ -72,56 +72,119 @@ class CVEScanner:
         self._executor = None  # Store executor reference for cancellation
         self.platform = platform
         self.cache_dir = Path(cache_dir)
-        self.cache_ttl_hours = cache_ttl_hours
         self.timeout_per_image = timeout_per_image
         self.check_fresh_images = check_fresh_images
-        self.cache_file = self.cache_dir / "scan_cache.json"
+        # No single cache file - we'll use per-digest files
         self.completed_pairs = 0
         self.total_pairs = 0
+        # Cache usage tracking
+        self.cache_hits = 0
+        self.cache_misses = 0
+        self.total_scans = 0
+        self._stats_lock = threading.Lock()
         # Add semaphore to limit concurrent Grype scans (max 2 concurrent)
         self._grype_semaphore = threading.Semaphore(2)
         self._setup_cache()
     
     def _setup_cache(self):
-        """Initialize cache directory and file"""
+        """Initialize cache directory"""
         self.cache_dir.mkdir(exist_ok=True)
-        if not self.cache_file.exists():
-            self._save_cache({})
+
+    def _get_cache_file_path(self, cache_key: str) -> Path:
+        """Get the file path for a specific cache key"""
+        # Use a safe filename by replacing problematic characters
+        safe_key = cache_key.replace('/', '_').replace(':', '_').replace('#', '_')
+        return self.cache_dir / f"{safe_key}.json"
+
+    def clear_cache(self):
+        """Clear all cache files"""
+        if not self.cache_dir.exists():
+            return
+
+        cache_files_deleted = 0
+        for cache_file in self.cache_dir.glob("*.json"):
+            try:
+                cache_file.unlink()
+                cache_files_deleted += 1
+            except Exception as e:
+                logger.warning(f"Failed to delete cache file {cache_file}: {e}")
+
+        logger.info(f"Cleared {cache_files_deleted} cache files")
+
+    def print_cache_summary(self):
+        """Print a summary of cache usage statistics"""
+        if self.total_scans == 0:
+            logger.info("No scans performed")
+            return
+
+        cache_hit_rate = (self.cache_hits / self.total_scans) * 100
+        logger.info(f"Cache Summary: {self.cache_hits} cached, {self.cache_misses} scanned ({cache_hit_rate:.1f}% cache hit rate)")
     
-    def _load_cache(self) -> Dict:
-        """Load cache from file"""
+    def _load_cache_entry(self, cache_key: str) -> Optional[Dict]:
+        """Load a single cache entry from its dedicated file"""
+        cache_file = self._get_cache_file_path(cache_key)
         try:
-            with open(self.cache_file, 'r') as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {}
-    
-    def _save_cache(self, cache_data: Dict):
-        """Save cache to file"""
-        with open(self.cache_file, 'w') as f:
-            json.dump(cache_data, f, indent=2)
+            with open(cache_file, 'r') as f:
+                data = json.load(f)
+                logger.debug(f"Successfully loaded cache entry for {cache_key}")
+                return data
+        except FileNotFoundError:
+            logger.debug(f"Cache file not found for {cache_key}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"Cache file corrupted for {cache_key}: {e}")
+            # Remove corrupted file
+            try:
+                cache_file.unlink()
+            except:
+                pass
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error loading cache entry {cache_key}: {e}")
+            return None
+
+    def _save_cache_entry(self, cache_key: str, cache_entry: Dict):
+        """Save a single cache entry to its dedicated file"""
+        cache_file = self._get_cache_file_path(cache_key)
+
+        # Write to temporary file first, then atomic rename
+        temp_file = cache_file.with_suffix('.tmp')
+        try:
+            with open(temp_file, 'w') as f:
+                json.dump(cache_entry, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())  # Ensure data is written to disk
+
+            # Atomic rename
+            temp_file.rename(cache_file)
+            logger.debug(f"Successfully saved cache entry for {cache_key}")
+
+        except Exception as e:
+            logger.error(f"Error saving cache entry {cache_key}: {e}")
+            # Clean up temp file if it exists
+            if temp_file.exists():
+                temp_file.unlink()
     
     def _get_remote_digest(self, image_name: str) -> Optional[str]:
         """Get remote image digest using docker/podman manifest inspect"""
         try:
             for cmd in ['docker', 'podman']:
                 try:
-                    # Use manifest inspect to get remote digest
+                    # Use manifest inspect to get the latest remote digest
                     result = subprocess.run([cmd, 'manifest', 'inspect', image_name],
                                           capture_output=True, text=True, timeout=30)
                     if result.returncode == 0:
                         manifest_data = json.loads(result.stdout)
-                        # Extract digest from manifest
+                        # Try different possible digest fields
+                        digest = None
                         if 'digest' in manifest_data:
                             digest = manifest_data['digest']
-                        elif 'Digest' in manifest_data:
-                            digest = manifest_data['Digest']
-                        else:
-                            # Calculate digest from manifest content
-                            digest = f"sha256:{hashlib.sha256(result.stdout.encode()).hexdigest()}"
+                        elif 'config' in manifest_data and 'digest' in manifest_data['config']:
+                            digest = manifest_data['config']['digest']
 
-                        logger.debug(f"Remote digest for {image_name}: {digest}")
-                        return digest
+                        if digest and digest.startswith('sha256:'):
+                            logger.debug(f"Remote digest for {image_name}: {digest}")
+                            return digest
                     else:
                         # Check for auth errors
                         if any(phrase in result.stderr.lower() for phrase in
@@ -137,17 +200,18 @@ class CVEScanner:
         return None
 
     def _get_local_digest(self, image_name: str) -> Optional[str]:
-        """Get local image digest without pulling"""
+        """Get local image digest - use image config digest to match remote"""
         for cmd in ['docker', 'podman']:
             try:
-                result = subprocess.run([cmd, 'inspect', '--format={{.RepoDigests}}', image_name],
+                # Get the image config digest (should match manifest's config digest)
+                result = subprocess.run([cmd, 'inspect', '--format={{.Id}}', image_name],
                                       capture_output=True, text=True, timeout=30)
                 if result.returncode == 0:
-                    digest_info = result.stdout.strip()
-                    # Extract SHA256 digest from format like [registry/image@sha256:...]
-                    if '@sha256:' in digest_info:
-                        digest = digest_info.split('@sha256:')[1].split(']')[0].split()[0]
-                        return f"sha256:{digest}"
+                    image_id = result.stdout.strip()
+                    if image_id.startswith('sha256:'):
+                        return image_id
+                    else:
+                        return f"sha256:{image_id}"
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 continue
         return None
@@ -155,18 +219,23 @@ class CVEScanner:
     def _ensure_fresh_image(self, image_name: str) -> bool:
         """Ensure we have the latest version of the image. Returns True if image was updated."""
         try:
-            # Get remote digest first (fast API call)
+            # Step 1: Get the latest remote digest
+            logger.debug(f"Checking remote digest for {image_name}")
             remote_digest = self._get_remote_digest(image_name)
             if not remote_digest:
                 logger.debug(f"Could not get remote digest for {image_name}, skipping freshness check")
                 return False
 
-            # Get local digest
+            # Step 2: Get local digest and compare
             local_digest = self._get_local_digest(image_name)
 
-            # If no local image or digests differ, pull the image
             if not local_digest or local_digest != remote_digest:
-                logger.info(f"Pulling fresh version of {image_name} (remote digest: {remote_digest[:19]}...)")
+                # Step 2b: Pull fresh copy if no local image or digest differs
+                if not local_digest:
+                    logger.info(f"No local image found for {image_name}, pulling...")
+                else:
+                    logger.info(f"Image {image_name} has changed, pulling fresh copy...")
+
                 for cmd in ['docker', 'podman']:
                     try:
                         pull_result = subprocess.run([cmd, 'pull', image_name],
@@ -176,11 +245,10 @@ class CVEScanner:
                             return True
                     except (subprocess.TimeoutExpired, FileNotFoundError):
                         continue
-
                 logger.warning(f"Failed to pull {image_name}")
                 return False
             else:
-                logger.debug(f"Local image {image_name} is up to date")
+                logger.debug(f"Image {image_name} is up to date (digest: {local_digest[:19]}...)")
                 return False
 
         except Exception as e:
@@ -231,12 +299,6 @@ class CVEScanner:
         platform_suffix = f"_{self.platform}" if self.platform else ""
         return f"{image_name}#{digest}{platform_suffix}"
     
-    def _is_cache_valid(self, cache_entry: Dict) -> bool:
-        """Check if cache entry is still valid based on TTL"""
-        if 'timestamp' not in cache_entry:
-            return False
-        cache_age_hours = (time.time() - cache_entry['timestamp']) / 3600
-        return cache_age_hours < self.cache_ttl_hours
     
     def _get_cached_scan_result(self, image_name: str) -> Optional[VulnerabilityData]:
         """Get cached scan result if available and valid"""
@@ -247,7 +309,7 @@ class CVEScanner:
         cache_key = self._get_cache_key(image_name, digest)
         cache_data = self._load_cache()
         
-        if cache_key in cache_data and self._is_cache_valid(cache_data[cache_key]):
+        if cache_key in cache_data:
             logger.info(f"Using cached scan result for {image_name}")
             cached = cache_data[cache_key]
             return VulnerabilityData(
@@ -304,20 +366,81 @@ class CVEScanner:
     
     def scan_image(self, image_name: str) -> VulnerabilityData:
         """Scan a single image with Grype and return vulnerability data"""
+        # Steps 1-2: Ensure we have the latest image version (if fresh checking enabled)
+        if self.check_fresh_images:
+            self._ensure_fresh_image(image_name)
 
-        # Check cache first
-        cached_result = self._get_cached_scan_result(image_name)
-        if cached_result:
-            return cached_result
+        # Step 3: Get current image digest and check scan cache for that specific digest
+        current_digest = self._get_local_digest(image_name)
+        if current_digest:
+            # Check if we have a cached scan result for this exact image digest
+            cached_result = self._get_cached_scan_for_digest(image_name, current_digest)
+            if cached_result:
+                logger.info(f"Using cached scan result for {image_name} (digest: {current_digest[:19]}...)")
+                return cached_result
 
-        # No cache hit, perform actual scan
+        # Step 4: No cached result for this digest, perform actual scan
+        logger.info(f"Scanning {image_name} (digest: {current_digest[:19] if current_digest else 'unknown'}...)")
         result = self._scan_image_with_retry(image_name, retry=True)
 
         # Cache the result if scan was successful
-        if result.scan_successful:
-            self._cache_scan_result(image_name, result)
+        if result.scan_successful and current_digest:
+            self._cache_scan_result_with_digest(image_name, current_digest, result)
 
         return result
+
+    def _get_cached_scan_for_digest(self, image_name: str, digest: str) -> Optional[VulnerabilityData]:
+        """Get cached scan result for a specific image digest"""
+        cache_key = self._get_cache_key(image_name, digest)
+        logger.info(f"Looking for cached scan with key: {cache_key}")
+
+        cached = self._load_cache_entry(cache_key)
+        if cached:
+            with self._stats_lock:
+                self.cache_hits += 1
+                self.total_scans += 1
+
+            cache_age_hours = (time.time() - cached.get('timestamp', 0)) / 3600
+            logger.info(f"Cache entry found for {image_name}, age: {cache_age_hours:.1f}h")
+            logger.info(f"Using cached scan result for {image_name} (digest: {digest[:16]}...)")
+
+            return VulnerabilityData(
+                image_name=cached['image_name'],
+                total_vulnerabilities=cached['total_vulnerabilities'],
+                severity_breakdown=cached['severity_breakdown'],
+                vulnerabilities=cached['vulnerabilities'],
+                scan_successful=cached['scan_successful'],
+                error_message=cached.get('error_message', ''),
+                was_retried=cached.get('was_retried', False),
+                original_image_name=cached.get('original_image_name', cached['image_name'])
+            )
+        else:
+            with self._stats_lock:
+                self.cache_misses += 1
+                self.total_scans += 1
+
+            logger.info(f"No valid cached scan found for {image_name} with digest {digest[:16]}...")
+            return None
+
+    def _cache_scan_result_with_digest(self, image_name: str, digest: str, vuln_data: VulnerabilityData):
+        """Cache scan result with specific image digest"""
+        cache_key = self._get_cache_key(image_name, digest)
+
+        cache_entry = {
+            'image_name': vuln_data.image_name,
+            'total_vulnerabilities': vuln_data.total_vulnerabilities,
+            'severity_breakdown': vuln_data.severity_breakdown,
+            'vulnerabilities': vuln_data.vulnerabilities,
+            'scan_successful': vuln_data.scan_successful,
+            'error_message': vuln_data.error_message,
+            'was_retried': vuln_data.was_retried,
+            'original_image_name': vuln_data.original_image_name,
+            'timestamp': time.time(),
+            'digest': digest
+        }
+
+        self._save_cache_entry(cache_key, cache_entry)
+        logger.debug(f"Cached scan result for {image_name} (digest: {digest[:16]}...)")
     
     def _categorize_scan_error(self, error_output: str, image_name: str) -> Tuple[str, str]:
         """Categorize scan errors and return user-friendly error type and message"""
@@ -2444,7 +2567,7 @@ Examples:
   %(prog)s -s image_pairs.csv -o report.html --platform linux/amd64
   
   # With cache control:
-  %(prog)s -s image_pairs.csv -o report.html --cache-ttl 48 --cache-dir ./my_cache
+  %(prog)s -s image_pairs.csv -o report.html --cache-dir ./my_cache
   
   # With failed pairs output:
   %(prog)s -s image_pairs.csv -o report.html --failed-pairs-output failed_images.csv
@@ -2457,7 +2580,7 @@ Performance:
   Rows with any failed scans are excluded from results
   
 Caching:
-  Scan results are cached using image digests for 24 hours by default
+  Scan results are cached using image digests indefinitely
   Use --no-cache to disable caching or --clear-cache to start fresh
 
 Registry Fallback:
@@ -2484,8 +2607,6 @@ Registry Fallback:
                        help='Platform to use for Grype scans (e.g., "linux/amd64", "linux/arm64")')
     parser.add_argument('--cache-dir', default='.cache',
                        help='Directory to store scan cache (default: .cache)')
-    parser.add_argument('--cache-ttl', type=int, default=24,
-                       help='Cache TTL in hours (default: 24)')
     parser.add_argument('--no-cache', action='store_true',
                        help='Disable caching and rescan all images')
     parser.add_argument('--clear-cache', action='store_true',
@@ -2498,11 +2619,9 @@ Registry Fallback:
     args = parser.parse_args()
     
     # Initialize scanner with cache settings
-    cache_ttl = 0 if args.no_cache else args.cache_ttl
     scanner = CVEScanner(
         platform=args.platform,
         cache_dir=args.cache_dir,
-        cache_ttl_hours=cache_ttl,
         timeout_per_image=args.timeout_per_image,
         check_fresh_images=not args.no_fresh_check
     )
@@ -2510,9 +2629,7 @@ Registry Fallback:
     # Handle cache clearing
     if args.clear_cache:
         logger.info("Clearing existing cache...")
-        if scanner.cache_file.exists():
-            scanner.cache_file.unlink()
-            scanner._setup_cache()
+        scanner.clear_cache()
         logger.info("Cache cleared.")
     
     if args.no_cache:
@@ -2548,6 +2665,9 @@ Registry Fallback:
     if args.failed_pairs_output and scanner.failed_rows:
         scanner.write_failed_pairs_csv(args.failed_pairs_output)
     
+    # Print cache usage summary
+    scanner.print_cache_summary()
+
     # Final success message
     total_pairs = len(scan_results) + len(scanner.failed_rows)
     success_rate = (len(scan_results) / total_pairs * 100) if total_pairs > 0 else 0
