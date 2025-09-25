@@ -54,7 +54,7 @@ python3 cve_scanner.py -s sample.csv -o report.html -e sample-exec-summary.md -a
 python3 cve_scanner.py -s sample.csv -o report.html -c "Sample Customer"
 
 # With caching options
-python3 cve_scanner.py -s sample.csv -o report.html --cache-ttl 48 --cache-dir ./my_cache
+python3 cve_scanner.py -s sample.csv -o report.html --cache-dir ./my_cache
 
 # Disable caching for fresh scans
 python3 cve_scanner.py -s sample.csv -o report.html --no-cache
@@ -66,7 +66,7 @@ python3 cve_scanner.py -s sample.csv -o report.html --clear-cache
 python3 cve_scanner.py -s sample.csv -o report.html --failed-pairs-output failed_images.csv
 
 # Complete example with all options
-python3 cve_scanner.py -s sample.csv -o sample-customer.html -e sample-exec-summary.md -a sample-appendix.md -c "Sample Customer" --max-workers 2 --cache-ttl 24 --failed-pairs-output failed.csv
+python3 cve_scanner.py -s sample.csv -o sample-customer.html -e sample-exec-summary.md -a sample-appendix.md -c "Sample Customer" --max-workers 2 --failed-pairs-output failed.csv
 
 ```
 
@@ -98,9 +98,9 @@ logstash:7.17.0,cgr.dev/chainguard-private/logstash:7
 
 **Caching Options:**
 - `--cache-dir`: Directory to store scan cache (default: .cache)
-- `--cache-ttl`: Cache TTL in hours (default: 24)
 - `--no-cache`: Disable caching and rescan all images
 - `--clear-cache`: Clear existing cache before starting
+- `--no-fresh-check`: Skip checking for fresh image versions (faster but may use stale images)
 
 **Output Options:**
 - `--failed-pairs-output`: Output CSV file path for failed image pairs
@@ -130,26 +130,32 @@ The tool includes a sophisticated caching system to dramatically improve perform
 
 ### How It Works
 - **Image Digest Verification**: Uses Docker/Podman to get the actual SHA256 digest of images
-- **Cache Key Generation**: Creates unique cache keys combining image name, digest, and platform
-- **Automatic Cache Management**: Stores successful scan results in JSON format with timestamps
-- **TTL-Based Expiration**: Cached results expire after 24 hours by default (configurable)
+- **Fresh Image Detection**: Automatically checks if remote images are newer than local cached versions
+- **Cache Key Generation**: Creates unique cache keys using image digests and platform
+- **Automatic Cache Management**: Stores successful scan results in JSON format indefinitely
+- **Digest-Based Validation**: Cached results are valid as long as the image digest matches
 
 ### Benefits
-- **Skip Identical Scans**: If the same image (by digest) was scanned recently, use cached results
+- **Skip Identical Scans**: If the same image (by digest) was scanned before, use cached results
+- **Automatic Fresh Image Detection**: Only pulls images when remote digest differs from local
 - **Platform Awareness**: Different cache entries for different platforms (linux/amd64, linux/arm64, etc.)
 - **Tag-Independent**: Even if tags change, identical image content uses cached results
 - **Significant Speed Improvements**: Cached scans return instantly vs. minutes for fresh scans
+- **Immutable Cache**: Digest-based caching means cached results never expire
 
 ### Cache Management
 ```bash
-# Use custom cache directory and TTL
-python3 cve_scanner.py -s sample.csv -o report.html --cache-dir /path/to/cache --cache-ttl 48
+# Use custom cache directory
+python3 cve_scanner.py -s sample.csv -o report.html --cache-dir /path/to/cache
 
 # Disable caching completely
 python3 cve_scanner.py -s sample.csv -o report.html --no-cache
 
 # Clear existing cache and start fresh
 python3 cve_scanner.py -s sample.csv -o report.html --clear-cache
+
+# Skip fresh image checking (use local images as-is)
+python3 cve_scanner.py -s sample.csv -o report.html --no-fresh-check
 ```
 
 ### Cache Location
