@@ -175,15 +175,49 @@ class CVEScanner:
                                           capture_output=True, text=True, timeout=30)
                     if result.returncode == 0:
                         manifest_data = json.loads(result.stdout)
-                        # Try different possible digest fields
+
+                        # Handle multi-arch manifest (OCI image index)
+                        if 'manifests' in manifest_data and isinstance(manifest_data['manifests'], list):
+                            logger.debug(f"Multi-arch manifest detected for {image_name}")
+                            # Determine the platform to use
+                            target_arch = self.platform.split('/')[0] if self.platform and '/' in self.platform else 'amd64'
+                            target_os = self.platform.split('/')[1] if self.platform and '/' in self.platform else 'linux'
+
+                            # Find the platform-specific manifest
+                            for manifest in manifest_data['manifests']:
+                                platform = manifest.get('platform', {})
+                                if platform.get('architecture') == target_arch and platform.get('os') == target_os:
+                                    manifest_digest = manifest.get('digest')
+                                    if manifest_digest:
+                                        logger.debug(f"Found {target_os}/{target_arch} manifest digest: {manifest_digest}")
+                                        # Now fetch that specific manifest to get its config digest
+                                        platform_result = subprocess.run([cmd, 'manifest', 'inspect', f"{image_name}@{manifest_digest}"],
+                                                                       capture_output=True, text=True, timeout=30)
+                                        if platform_result.returncode == 0:
+                                            platform_manifest = json.loads(platform_result.stdout)
+                                            if 'config' in platform_manifest and 'digest' in platform_manifest['config']:
+                                                config_digest = platform_manifest['config']['digest']
+                                                logger.debug(f"Platform-specific config digest: {config_digest}")
+                                                return config_digest
+                                        # Fallback: use the manifest digest itself
+                                        return manifest_digest
+
+                            # If no matching platform found, use the first one (default)
+                            if manifest_data['manifests']:
+                                first_manifest = manifest_data['manifests'][0].get('digest')
+                                logger.debug(f"No matching platform, using first manifest: {first_manifest}")
+                                return first_manifest
+
+                        # Single-arch manifest - use config digest (image ID) for comparison
                         digest = None
-                        if 'digest' in manifest_data:
-                            digest = manifest_data['digest']
-                        elif 'config' in manifest_data and 'digest' in manifest_data['config']:
+                        if 'config' in manifest_data and 'digest' in manifest_data['config']:
                             digest = manifest_data['config']['digest']
+                        elif 'digest' in manifest_data:
+                            # Fallback to manifest digest
+                            digest = manifest_data['digest']
 
                         if digest and digest.startswith('sha256:'):
-                            logger.debug(f"Remote digest for {image_name}: {digest}")
+                            logger.debug(f"Remote config digest for {image_name}: {digest}")
                             return digest
                     else:
                         # Check for auth errors
@@ -510,8 +544,28 @@ class CVEScanner:
                     # Log initial failure as warning (not error yet)
                     error_type, user_friendly_msg = self._categorize_scan_error(result.stderr, image_name)
                     logger.warning(f"[{error_type}] Initial scan failed for {image_name}, trying fallback strategies...")
-                    
-                    # Strategy 1: Try with :latest tag if not already using it (skip for digest-based images)
+                    logger.debug(f"Error details: {result.stderr[:500]}")
+
+                    # Strategy 1: Try mirror.gcr.io fallback for Docker Hub images (helps with rate limits)
+                    mirror_image = self._try_mirror_gcr_fallback(original_image_name)
+                    if mirror_image:
+                        logger.info(f"Trying mirror.gcr.io fallback for {original_image_name} -> {mirror_image}")
+                        mirror_result = self._scan_image_with_retry(mirror_image, retry=False)
+
+                        if mirror_result.scan_successful:
+                            logger.info(f"Mirror.gcr.io fallback successful for {mirror_image}")
+                            # Don't mark as retried since mirror.gcr.io is just a transparent mirror of the same image
+                            return VulnerabilityData(
+                                image_name=original_image_name,  # Use original name in report
+                                total_vulnerabilities=mirror_result.total_vulnerabilities,
+                                severity_breakdown=mirror_result.severity_breakdown,
+                                vulnerabilities=mirror_result.vulnerabilities,
+                                scan_successful=True,
+                                was_retried=False,  # Not marked as retried - same image, different mirror
+                                original_image_name=original_image_name
+                            )
+
+                    # Strategy 2: Try with :latest tag if not already using it (skip for digest-based images)
                     if not image_name.endswith(':latest') and '@sha256:' not in image_name:
                         logger.info(f"Retrying {image_name} with :latest tag")
                         # If image has no tag, add :latest; if it has a tag, replace with :latest
@@ -521,7 +575,7 @@ class CVEScanner:
                         else:
                             latest_image = f"{image_name}:latest"
                         retry_result = self._scan_image_with_retry(latest_image, retry=False)
-                        
+
                         if retry_result.scan_successful:
                             logger.info(f"Retry successful for {latest_image}")
                             return VulnerabilityData(
@@ -529,24 +583,6 @@ class CVEScanner:
                                 total_vulnerabilities=retry_result.total_vulnerabilities,
                                 severity_breakdown=retry_result.severity_breakdown,
                                 vulnerabilities=retry_result.vulnerabilities,
-                                scan_successful=True,
-                                was_retried=True,
-                                original_image_name=original_image_name
-                            )
-                    
-                    # Strategy 2: Try mirror.gcr.io fallback for Docker Hub images
-                    mirror_image = self._try_mirror_gcr_fallback(original_image_name)
-                    if mirror_image:
-                        logger.info(f"Trying mirror.gcr.io fallback for {original_image_name} -> {mirror_image}")
-                        mirror_result = self._scan_image_with_retry(mirror_image, retry=False)
-                        
-                        if mirror_result.scan_successful:
-                            logger.info(f"Mirror.gcr.io fallback successful for {mirror_image}")
-                            return VulnerabilityData(
-                                image_name=mirror_result.image_name,
-                                total_vulnerabilities=mirror_result.total_vulnerabilities,
-                                severity_breakdown=mirror_result.severity_breakdown,
-                                vulnerabilities=mirror_result.vulnerabilities,
                                 scan_successful=True,
                                 was_retried=True,
                                 original_image_name=original_image_name
@@ -597,8 +633,27 @@ class CVEScanner:
             # If scan timed out and retry is enabled, try fallback strategies
             if retry:
                 logger.warning(f"[TIMEOUT] Initial scan timeout for {image_name}, trying fallback strategies...")
-                
-                # Strategy 1: Try with :latest tag if not already using it (skip for digest-based images)
+
+                # Strategy 1: Try mirror.gcr.io fallback for Docker Hub images (helps with rate limits)
+                mirror_image = self._try_mirror_gcr_fallback(original_image_name)
+                if mirror_image:
+                    logger.info(f"Trying mirror.gcr.io fallback after timeout for {original_image_name} -> {mirror_image}")
+                    mirror_result = self._scan_image_with_retry(mirror_image, retry=False)
+
+                    if mirror_result.scan_successful:
+                        logger.info(f"Mirror.gcr.io fallback successful for {mirror_image}")
+                        # Don't mark as retried since mirror.gcr.io is just a transparent mirror of the same image
+                        return VulnerabilityData(
+                            image_name=original_image_name,  # Use original name in report
+                            total_vulnerabilities=mirror_result.total_vulnerabilities,
+                            severity_breakdown=mirror_result.severity_breakdown,
+                            vulnerabilities=mirror_result.vulnerabilities,
+                            scan_successful=True,
+                            was_retried=False,  # Not marked as retried - same image, different mirror
+                            original_image_name=original_image_name
+                        )
+
+                # Strategy 2: Try with :latest tag if not already using it (skip for digest-based images)
                 if not image_name.endswith(':latest') and '@sha256:' not in image_name:
                     logger.info(f"Retrying {image_name} with :latest tag after timeout")
                     # If image has no tag, add :latest; if it has a tag, replace with :latest
@@ -608,7 +663,7 @@ class CVEScanner:
                     else:
                         latest_image = f"{image_name}:latest"
                     retry_result = self._scan_image_with_retry(latest_image, retry=False)
-                    
+
                     if retry_result.scan_successful:
                         logger.info(f"Retry successful for {latest_image}")
                         return VulnerabilityData(
@@ -616,24 +671,6 @@ class CVEScanner:
                             total_vulnerabilities=retry_result.total_vulnerabilities,
                             severity_breakdown=retry_result.severity_breakdown,
                             vulnerabilities=retry_result.vulnerabilities,
-                            scan_successful=True,
-                            was_retried=True,
-                            original_image_name=original_image_name
-                        )
-                
-                # Strategy 2: Try mirror.gcr.io fallback for Docker Hub images
-                mirror_image = self._try_mirror_gcr_fallback(original_image_name)
-                if mirror_image:
-                    logger.info(f"Trying mirror.gcr.io fallback after timeout for {original_image_name} -> {mirror_image}")
-                    mirror_result = self._scan_image_with_retry(mirror_image, retry=False)
-                    
-                    if mirror_result.scan_successful:
-                        logger.info(f"Mirror.gcr.io fallback successful for {mirror_image}")
-                        return VulnerabilityData(
-                            image_name=mirror_result.image_name,
-                            total_vulnerabilities=mirror_result.total_vulnerabilities,
-                            severity_breakdown=mirror_result.severity_breakdown,
-                            vulnerabilities=mirror_result.vulnerabilities,
                             scan_successful=True,
                             was_retried=True,
                             original_image_name=original_image_name
@@ -2461,9 +2498,16 @@ em {
     
     def _try_mirror_gcr_fallback(self, image_name: str) -> Optional[str]:
         """Try to create a mirror.gcr.io fallback for Docker Hub images"""
+        # Check if it's a docker.io image
+        if image_name.startswith('docker.io/'):
+            # Strip docker.io/ prefix and use mirror.gcr.io
+            stripped = image_name[len('docker.io/'):]
+            return f"mirror.gcr.io/{stripped}"
+
+        # Check if it has a non-docker.io registry prefix
         if self._has_registry_prefix(image_name):
-            return None  # Already has registry prefix
-        
+            return None  # Already has non-docker.io registry prefix
+
         # For Docker Hub images without explicit registry, try mirror.gcr.io
         if '/' not in image_name:
             # Single name image (e.g., "ubuntu:20.04" -> "mirror.gcr.io/library/ubuntu:20.04")
