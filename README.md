@@ -41,6 +41,8 @@ A Python tool that demonstrates Chainguard's value proposition by scanning conta
 
 The tool supports CSV format with **parallel scanning** for improved performance:
 
+**NOTE** Print the output HTML to pdf via your web browser. **Ensure no margins!**
+
 ```bash
 # CSV format (best performance with parallel scanning)
 python3 cve_scanner.py -s sample.csv -o report.html -e sample-exec-summary.md --max-workers 8

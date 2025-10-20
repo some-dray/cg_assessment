@@ -6,8 +6,8 @@ A security assessment of {{images_scanned}} images currently in use at {{custome
 
 - {{images_with_reduction}} of {{images_scanned}} images show lower CVEs with Chainguard Images.
 - Average per-image CVE reduction: {{average_reduction_per_image}}.
-- Based on this **sample** list of images from {{customer_name}} Chainguard images reduced {{total_customer_vulns}} vulnerabilities to {{total_chainguard_vulns}}. Rolling Chainguard out to the vull {{customer_name}} environment would result in a much larger vulnerability count reduction.
-- Distroless/minimal bases eliminate unnecessary components resulting in a reduced attack surface and CVES accumulating at a 90% slower rate in runtime.
+- Based on this **sample** list of images from {{customer_name}} Chainguard images reduced {{total_customer_vulns}} vulnerabilities to {{total_chainguard_vulns}}. Rolling Chainguard out to the full {{customer_name}} environment would result in a much larger vulnerability count reduction.
+- Distroless/minimal bases eliminate unnecessary components resulting in a reduced attack surface.
 
 
 ### Business Impact
@@ -20,8 +20,4 @@ A security assessment of {{images_scanned}} images currently in use at {{custome
 
 Adopting Chainguard images as replacements will materially reduce vulnerabilities, streamline security operations, and improve developer efficiency across the {{customer_name}} platform.
 
-<br>
-<br>
-<br>
-<br>
 <br>
