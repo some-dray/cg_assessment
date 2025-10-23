@@ -179,9 +179,9 @@ class CVEScanner:
                         # Handle multi-arch manifest (OCI image index)
                         if 'manifests' in manifest_data and isinstance(manifest_data['manifests'], list):
                             logger.debug(f"Multi-arch manifest detected for {image_name}")
-                            # Determine the platform to use
-                            target_arch = self.platform.split('/')[0] if self.platform and '/' in self.platform else 'amd64'
-                            target_os = self.platform.split('/')[1] if self.platform and '/' in self.platform else 'linux'
+                            # Determine the platform to use (platform format is "os/arch" e.g., "linux/amd64")
+                            target_os = self.platform.split('/')[0] if self.platform and '/' in self.platform else 'linux'
+                            target_arch = self.platform.split('/')[1] if self.platform and '/' in self.platform else 'amd64'
 
                             # Find the platform-specific manifest
                             for manifest in manifest_data['manifests']:
@@ -272,7 +272,11 @@ class CVEScanner:
 
                 for cmd in ['docker', 'podman']:
                     try:
-                        pull_result = subprocess.run([cmd, 'pull', image_name],
+                        pull_cmd = [cmd, 'pull']
+                        if self.platform:
+                            pull_cmd.extend(['--platform', self.platform])
+                        pull_cmd.append(image_name)
+                        pull_result = subprocess.run(pull_cmd,
                                                    capture_output=True, text=True, timeout=300)
                         if pull_result.returncode == 0:
                             logger.debug(f"Successfully pulled {image_name}")
@@ -306,7 +310,11 @@ class CVEScanner:
         for cmd in ['docker', 'podman']:
             try:
                 logger.info(f"No digest found for {image_name}, attempting to pull...")
-                pull_result = subprocess.run([cmd, 'pull', image_name],
+                pull_cmd = [cmd, 'pull']
+                if self.platform:
+                    pull_cmd.extend(['--platform', self.platform])
+                pull_cmd.append(image_name)
+                pull_result = subprocess.run(pull_cmd,
                                            capture_output=True, text=True, timeout=300)
                 if pull_result.returncode == 0:
                     # Try inspect again
