@@ -1027,11 +1027,6 @@ class CVEScanner:
                 html_content = re.sub(r'<p>(<ul>.*?</ul>)</p>', r'\1', html_content, flags=re.DOTALL)
                 content = html_content
             
-            # Write custom executive summary to a file if provided
-            with open(exec_file, 'w') as f:
-                f.write(content)
-                f.close()
-            logger.info(f"Wrote custom executive summary to {exec_file}")
             return content
         
         except Exception as e:
@@ -1096,6 +1091,9 @@ class CVEScanner:
                 'customer': result.customer_data,
                 'chainguard': result.chainguard_data
             })
+
+        # Sort image pairs alphabetically by Chainguard image name (A-Z)
+        image_pairs.sort(key=lambda pair: pair['chainguard'].image_name.lower() if pair['chainguard'] else '')
         
         # Embed CSS content directly
         css_content = self._get_embedded_css()
@@ -1472,12 +1470,6 @@ class CVEScanner:
                 html_content = re.sub(r'<p>(<ul>.*?</ul>)</p>', r'\1', html_content, flags=re.DOTALL)
                 custom_content = html_content
 
-            # Write new appendix file
-            with open(appendix_file, 'w') as f:
-                f.write(md_content)
-                f.close()
-                logger.info(f"Wrote custom appendix to {appendix_file}")
-            
             # Combine custom content (above) with default content
             return f"<div>{custom_content}{default_content}</div>"
             
