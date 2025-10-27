@@ -1096,6 +1096,9 @@ class CVEScanner:
                 'customer': result.customer_data,
                 'chainguard': result.chainguard_data
             })
+
+        # Sort image pairs alphabetically by Chainguard image name (A-Z)
+        image_pairs.sort(key=lambda pair: pair['chainguard'].image_name.lower() if pair['chainguard'] else '')
         
         # Embed CSS content directly
         css_content = self._get_embedded_css()
